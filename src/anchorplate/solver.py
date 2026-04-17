@@ -8,7 +8,7 @@ from typing import Sequence
 
 import numpy as np
 from scipy.sparse import csr_matrix, diags
-from skfem import Basis, BilinearForm, ElementTriMorley, condense, solve
+from skfem import Basis, BilinearForm, ElementQuadBFS, ElementTriMorley, condense, solve
 from skfem.helpers import dd, ddot, eye, trace
 
 from .loading import LoadTransferRecord, add_coupled_line_loads, add_point_loads
@@ -41,6 +41,7 @@ class Result:
     von_mises_mpa: np.ndarray
     max_deflection_mm: float
     max_von_mises_mpa: float
+    mesh_backend: str
 
 
 def support_reaction_rows(result: Result) -> list[dict[str, object]]:
@@ -411,7 +412,12 @@ def solve_anchor_plate(
     options = options or AnalysisOptions()
 
     mesh = build_mesh(plate, supports, point_loads, coupled_loads, options, refinement_boxes=refinement_boxes)
-    basis = Basis(mesh, ElementTriMorley())
+    if options.mesh_backend == "tri_morley":
+        basis = Basis(mesh, ElementTriMorley())
+    elif options.mesh_backend == "quad_bfs":
+        basis = Basis(mesh, ElementQuadBFS())
+    else:
+        raise ValueError(f"Unsupported mesh_backend: {options.mesh_backend}")
     k_plate = assemble_plate_stiffness(basis, plate)
 
     rhs = np.zeros(k_plate.shape[0], dtype=float)
@@ -489,4 +495,5 @@ def solve_anchor_plate(
         von_mises_mpa=sigma_vm,
         max_deflection_mm=float(np.max(wv)),
         max_von_mises_mpa=float(np.max(sigma_vm)),
+        mesh_backend=options.mesh_backend,
     )

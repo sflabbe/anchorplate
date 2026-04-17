@@ -106,6 +106,7 @@ class AnalysisOptions:
     equilibrium_tol_abs_kN: float = 0.50
     equilibrium_tol_rel: float = 0.01
     line_pick_tol_mm: float = 1e-9
+    mesh_backend: Literal["tri_morley", "quad_bfs"] = "tri_morley"
 
 
 @dataclass
