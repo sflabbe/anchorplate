@@ -27,11 +27,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from anchorplate.benchmark_material import (
+    build_corner_supports,
     default_load_cases,
     material_spec_from_model_result,
     run_material_benchmark,
 )
-from anchorplate.model import AnalysisOptions, PointSupport, SteelPlate
+from anchorplate.model import AnalysisOptions, SteelPlate
 from anchorplate.support import (
     support_material_concrete_simple,
     support_material_steel_layers_simple,
@@ -42,13 +43,6 @@ from anchorplate.model import SteelLayer
 
 def main() -> None:
     plate = SteelPlate(length_mm=300.0, width_mm=300.0, thickness_mm=15.0)
-
-    supports = [
-        PointSupport(30.0,  30.0,  kind="spring", kz_n_per_mm=150_000.0, label="A1"),
-        PointSupport(270.0, 30.0,  kind="spring", kz_n_per_mm=150_000.0, label="A2"),
-        PointSupport(30.0,  270.0, kind="spring", kz_n_per_mm=150_000.0, label="A3"),
-        PointSupport(270.0, 270.0, kind="spring", kz_n_per_mm=150_000.0, label="A4"),
-    ]
 
     outdir = Path("outputs/material_benchmark")
     options = AnalysisOptions(
@@ -84,25 +78,49 @@ def main() -> None:
     ]
     load_cases = default_load_cases()
 
-    print("Running material benchmark …")
-    print(f"  {len(materials)} materials × {len(load_cases)} load cases = {len(materials)*len(load_cases)} analyses\n")
-
-    rows = run_material_benchmark(
-        plate=plate,
-        supports=supports,
-        materials=materials,
-        load_cases=load_cases,
-        options=options,
-        outdir=outdir,
-    )
+    rows = []
+    for support_kind in ("spring", "spring_tension_only"):
+        supports = build_corner_supports(kind=support_kind)
+        kind_outdir = outdir / support_kind
+        print(f"Running material benchmark ({support_kind}) …")
+        print(
+            f"  {len(materials)} materials × {len(load_cases)} load cases "
+            f"= {len(materials)*len(load_cases)} analyses\n"
+        )
+        rows.extend(
+            run_material_benchmark(
+                plate=plate,
+                supports=supports,
+                materials=materials,
+                load_cases=load_cases,
+                options=options,
+                outdir=kind_outdir,
+                hybrid_support_kind=support_kind,
+            )
+        )
 
     # Console summary table
-    print(f"\n{'Material':<30} {'LC':<20} {'k [N/mm³]':>10}  {'Contact%':>8}  {'w_max [mm]':>10}  {'η':>6}  {'ΣR [kN]':>8}")
+    print(
+        f"\n{'Support':<20} {'Material':<30} {'LC':<20} {'k [N/mm³]':>10}  "
+        f"{'Anchors':>10}  {'ΣR_anchor [kN]':>14}  {'ΣR_found [kN]':>13}"
+    )
     print("-" * 100)
     for r in rows:
         print(
-            f"{r.material:<30} {r.load_case:<20} {r.k_area_n_mm3:>10.1f}  "
-            f"{r.pct_active:>7.1f}%  {r.w_max_mm:>10.4f}  {r.eta_plate:>6.3f}  {r.sum_total_reactions_kN:>8.2f}"
+            f"{r.support_type:<20} {r.material:<30} {r.load_case:<20} {r.k_area_n_mm3:>10.1f}  "
+            f"{f'{r.anchor_active_count}/{r.anchor_inactive_count}':>10}  "
+            f"{r.sum_spring_reactions_kN:>14.2f}  {r.sum_foundation_reaction_kN:>13.2f}"
+        )
+
+    print("\nDirect comparison for uplift-sensitive case (LC04_Mx_pure):")
+    print(f"{'Support':<20} {'Material':<20} {'Anchors':>10} {'ΣR_anchor [kN]':>14} {'ΣR_found [kN]':>13}")
+    for r in rows:
+        if r.load_case != "LC04_Mx_pure":
+            continue
+        print(
+            f"{r.support_type:<20} {r.material:<20} "
+            f"{f'{r.anchor_active_count}/{r.anchor_inactive_count}':>10} "
+            f"{r.sum_spring_reactions_kN:>14.2f} {r.sum_foundation_reaction_kN:>13.2f}"
         )
 
     print(f"\nAll {len(rows)} cases converged: {all(r.converged for r in rows)}")

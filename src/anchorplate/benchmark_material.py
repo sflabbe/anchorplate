@@ -93,6 +93,9 @@ class MaterialBenchmarkRow:
     k_area_n_mm3:                float
     model_parameters_json:       str
     model_notes:                 str
+    support_type:                str
+    solve_status:                str
+    solve_error:                 str
     load_case:                   str
     load_description:            str
     force_kN:                    float
@@ -114,6 +117,9 @@ class MaterialBenchmarkRow:
     sum_spring_reactions_kN:     float
     max_spring_reaction_kN:      float
     min_spring_reaction_kN:      float
+    anchor_active_count:         int
+    anchor_inactive_count:       int
+    anchor_reactions_kN_json:    str
     # Reactions — continuous foundation (Winkler bedding) total
     sum_foundation_reaction_kN:  float
     # Global equilibrium check: springs + foundation ≈ applied Fz
@@ -237,6 +243,40 @@ def default_spring_supports() -> list[PointSupport]:
     ]
 
 
+def build_corner_supports(kind: str = "spring") -> list[PointSupport]:
+    """4-corner supports with configurable discrete support kind."""
+    if kind not in {"spring", "spring_tension_only"}:
+        raise ValueError(f"Unsupported support kind for benchmark: {kind}")
+    return [
+        PointSupport(30.0, 30.0, kind=kind, kz_n_per_mm=150_000.0, label="A1"),
+        PointSupport(270.0, 30.0, kind=kind, kz_n_per_mm=150_000.0, label="A2"),
+        PointSupport(30.0, 270.0, kind=kind, kz_n_per_mm=150_000.0, label="A3"),
+        PointSupport(270.0, 270.0, kind=kind, kz_n_per_mm=150_000.0, label="A4"),
+    ]
+
+
+def _supports_with_kind(
+    supports: Sequence[PointSupport],
+    kind: str,
+) -> list[PointSupport]:
+    """Clone supports while forcing spring-like supports to the requested kind."""
+    if kind not in {"spring", "spring_tension_only"}:
+        raise ValueError(f"Unsupported support kind for benchmark: {kind}")
+    mapped: list[PointSupport] = []
+    for s in supports:
+        mapped_kind = kind if s.kind in {"spring", "spring_tension_only"} else s.kind
+        mapped.append(
+            PointSupport(
+                x_mm=s.x_mm,
+                y_mm=s.y_mm,
+                kind=mapped_kind,
+                kz_n_per_mm=s.kz_n_per_mm,
+                label=s.label,
+            )
+        )
+    return mapped
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -249,6 +289,7 @@ def run_material_benchmark(
     options: AnalysisOptions | None = None,
     outdir: Path | None = None,
     compression_only: bool = True,
+    hybrid_support_kind: str = "spring",
 ) -> list[MaterialBenchmarkRow]:
     """
     Run the material benchmark and return one row per (material, load_case) combination.
@@ -263,6 +304,9 @@ def run_material_benchmark(
     options         : AnalysisOptions template (output_dir is overridden per case).
     outdir          : Root output directory.
     compression_only: Whether to use the compression-only (lift-off) contact model.
+    hybrid_support_kind:
+                    Discrete support law used by hybrid benchmark:
+                    "spring" (bidirectional linear) or "spring_tension_only".
 
     Returns
     -------
@@ -281,6 +325,7 @@ def run_material_benchmark(
     materials  = list(materials  or default_materials())
     load_cases = list(load_cases or default_load_cases())
     supports   = list(supports or default_spring_supports())
+    supports   = _supports_with_kind(supports, hybrid_support_kind)
     options    = options or AnalysisOptions()
     outdir     = outdir or Path(options.output_dir) / "material_benchmark"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -331,14 +376,54 @@ def run_material_benchmark(
                 )
             ]
 
-            result = solve_anchor_plate(
-                plate=plate,
-                supports=supports,
-                coupled_loads=[coupled_load],
-                options=case_opts,
-                foundation_patches=foundation,
-                name=case_name,
-            )
+            try:
+                result = solve_anchor_plate(
+                    plate=plate,
+                    supports=supports,
+                    coupled_loads=[coupled_load],
+                    options=case_opts,
+                    foundation_patches=foundation,
+                    name=case_name,
+                )
+                solve_status = "ok"
+                solve_error = ""
+            except RuntimeError as exc:
+                rows.append(
+                    MaterialBenchmarkRow(
+                        material=mat.name,
+                        model_name=mat.model_name,
+                        k_area_n_mm3=mat.k_area_n_per_mm3,
+                        model_parameters_json=json.dumps(mat.parameters or {}, sort_keys=True),
+                        model_notes=mat.notes,
+                        support_type=hybrid_support_kind,
+                        solve_status="failed",
+                        solve_error=str(exc),
+                        load_case=lc.name,
+                        load_description=lc.description,
+                        force_kN=lc.force_n / 1000.0,
+                        mx_kNm=lc.mx_nmm / 1.0e6,
+                        my_kNm=lc.my_nmm / 1.0e6,
+                        n_patch_total=0,
+                        n_active=0,
+                        n_inactive=0,
+                        pct_active=0.0,
+                        pct_inactive=0.0,
+                        n_iterations=case_opts.foundation_iterations_max,
+                        converged=False,
+                        w_max_mm=float("nan"),
+                        sigma_vm_max_mpa=float("nan"),
+                        eta_plate=float("nan"),
+                        sum_spring_reactions_kN=float("nan"),
+                        max_spring_reaction_kN=float("nan"),
+                        min_spring_reaction_kN=float("nan"),
+                        anchor_active_count=0,
+                        anchor_inactive_count=len(supports),
+                        anchor_reactions_kN_json="{}",
+                        sum_foundation_reaction_kN=float("nan"),
+                        sum_total_reactions_kN=float("nan"),
+                    )
+                )
+                continue
 
             # Plots
             if case_opts.save_plots:
@@ -355,6 +440,7 @@ def run_material_benchmark(
                     "model_name": mat.model_name,
                     "parameters": mat.parameters or {},
                     "notes": mat.notes,
+                    "support_type": hybrid_support_kind,
                 }
                 (case_dir / f"{case_name}_material_model.json").write_text(
                     json.dumps(metadata, indent=2, sort_keys=True),
@@ -366,6 +452,11 @@ def run_material_benchmark(
             summary = _contact_summary(result, active_mask, inactive_mask)
             R_kN = result.support_reactions_n / 1000.0
             found_R_kN = _foundation_total_reaction(result, foundation) / 1000.0
+            anchor_reaction_map = {
+                (s.label or f"A{i+1}"): float(R_kN[i]) for i, s in enumerate(supports)
+            }
+            anchor_active_count = int(np.sum(result.support_active))
+            anchor_inactive_count = int(len(result.support_active) - anchor_active_count)
 
             rows.append(MaterialBenchmarkRow(
                 material=mat.name,
@@ -373,6 +464,9 @@ def run_material_benchmark(
                 k_area_n_mm3=mat.k_area_n_per_mm3,
                 model_parameters_json=json.dumps(mat.parameters or {}, sort_keys=True),
                 model_notes=mat.notes,
+                support_type=hybrid_support_kind,
+                solve_status=solve_status,
+                solve_error=solve_error,
                 load_case=lc.name,
                 load_description=lc.description,
                 force_kN=lc.force_n / 1000.0,
@@ -391,6 +485,9 @@ def run_material_benchmark(
                 sum_spring_reactions_kN=float(np.sum(R_kN)),
                 max_spring_reaction_kN=float(np.max(R_kN)),
                 min_spring_reaction_kN=float(np.min(R_kN)),
+                anchor_active_count=anchor_active_count,
+                anchor_inactive_count=anchor_inactive_count,
+                anchor_reactions_kN_json=json.dumps(anchor_reaction_map, sort_keys=True),
                 sum_foundation_reaction_kN=found_R_kN,
                 sum_total_reactions_kN=float(np.sum(R_kN)) + found_R_kN,
             ))
@@ -426,16 +523,16 @@ def _save_markdown(rows: Sequence[MaterialBenchmarkRow], path: Path) -> None:
     header = textwrap.dedent("""\
         # Material benchmark — foundation patch (compression-only)
 
-        | Material | Model | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] |
-        |---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+        | Material | Model | Support type | Solve | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | Anchors active/inactive | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] |
+        |---|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
     """)
     lines = [header.rstrip()]
     for r in rows:
         lines.append(
-            f"| {r.material} | {r.model_name} | {r.k_area_n_mm3:.1f} | {r.load_case} "
+            f"| {r.material} | {r.model_name} | {r.support_type} | {r.solve_status} | {r.k_area_n_mm3:.1f} | {r.load_case} "
             f"| {r.force_kN:.0f} | {r.mx_kNm:.1f} | {r.my_kNm:.1f} "
             f"| {r.pct_active:.1f} | {r.pct_inactive:.1f} | {r.n_iterations} "
-            f"| {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
+            f"| {r.anchor_active_count}/{r.anchor_inactive_count} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
             f"| {r.sum_spring_reactions_kN:.2f} | {r.sum_foundation_reaction_kN:.2f} "
             f"| {r.sum_total_reactions_kN:.2f} |"
         )

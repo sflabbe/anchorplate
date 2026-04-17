@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
@@ -28,6 +29,7 @@ class SupportModelSpec:
     supports: tuple[PointSupport, ...]
     foundation_patch: FoundationPatch | None = None
     model_notes: str = ""
+    support_type: str = ""
 
 
 @dataclass
@@ -36,6 +38,9 @@ class BenchmarkMatrixRow:
     model_name: str
     model_type: str
     model_notes: str
+    support_type: str
+    solve_status: str
+    solve_error: str
     load_case: str
     load_description: str
     fz_kN: float
@@ -52,6 +57,10 @@ class BenchmarkMatrixRow:
     contact_active_pct: float | None
     contact_iterations: int | None
     contact_converged: bool | None
+    anchor_iterations: int | None
+    anchor_active_count: int
+    anchor_inactive_count: int
+    anchor_reactions_kN_json: str
     k_area_n_per_mm3: float | None
 
 
@@ -64,13 +73,20 @@ def default_matrix_load_cases() -> list[ProfisLikeCase]:
     ]
 
 
-def default_matrix_models() -> list[SupportModelSpec]:
-    spring_anchors = (
-        PointSupport(30.0, 30.0, kind="spring", kz_n_per_mm=150_000.0, label="A1"),
-        PointSupport(270.0, 30.0, kind="spring", kz_n_per_mm=150_000.0, label="A2"),
-        PointSupport(30.0, 270.0, kind="spring", kz_n_per_mm=150_000.0, label="A3"),
-        PointSupport(270.0, 270.0, kind="spring", kz_n_per_mm=150_000.0, label="A4"),
+def _corner_springs(kind: str) -> tuple[PointSupport, ...]:
+    return (
+        PointSupport(30.0, 30.0, kind=kind, kz_n_per_mm=150_000.0, label="A1"),
+        PointSupport(270.0, 30.0, kind=kind, kz_n_per_mm=150_000.0, label="A2"),
+        PointSupport(30.0, 270.0, kind=kind, kz_n_per_mm=150_000.0, label="A3"),
+        PointSupport(270.0, 270.0, kind=kind, kz_n_per_mm=150_000.0, label="A4"),
     )
+
+
+def default_matrix_models(hybrid_support_kind: str = "spring") -> list[SupportModelSpec]:
+    if hybrid_support_kind not in {"spring", "spring_tension_only"}:
+        raise ValueError(f"Unsupported hybrid_support_kind: {hybrid_support_kind}")
+    spring_anchors = _corner_springs("spring")
+    hybrid_anchors = _corner_springs(hybrid_support_kind)
     fixed_anchors = tuple(
         PointSupport(s.x_mm, s.y_mm, kind="fixed", kz_n_per_mm=0.0, label=s.label) for s in spring_anchors
     )
@@ -90,6 +106,7 @@ def default_matrix_models() -> list[SupportModelSpec]:
             model_type="discrete_only",
             supports=fixed_anchors,
             model_notes="4 anclajes fijos (sin rigidez distribuida).",
+            support_type="fixed",
         ),
         SupportModelSpec(
             key="spring_anchors",
@@ -97,30 +114,34 @@ def default_matrix_models() -> list[SupportModelSpec]:
             model_type="discrete_only",
             supports=spring_anchors,
             model_notes="4 anclajes elásticos (kz=150 kN/mm por anclaje).",
+            support_type="spring",
         ),
         SupportModelSpec(
-            key="foundation_patch_concrete",
-            display_name="foundation_patch_concrete",
+            key=f"foundation_patch_concrete__{hybrid_support_kind}",
+            display_name=f"foundation_patch_concrete__{hybrid_support_kind}",
             model_type="hybrid_springs_plus_foundation_patch",
-            supports=spring_anchors,
+            supports=hybrid_anchors,
             foundation_patch=FoundationPatch(k_area_n_per_mm3=k_concrete, label="concrete", **patch),
-            model_notes="Anclajes elásticos + parche de contacto hormigón (compresión-only).",
+            model_notes=f"Anclajes ({hybrid_support_kind}) + parche de contacto hormigón (compresión-only).",
+            support_type=hybrid_support_kind,
         ),
         SupportModelSpec(
-            key="foundation_patch_steel",
-            display_name="foundation_patch_steel",
+            key=f"foundation_patch_steel__{hybrid_support_kind}",
+            display_name=f"foundation_patch_steel__{hybrid_support_kind}",
             model_type="hybrid_springs_plus_foundation_patch",
-            supports=spring_anchors,
+            supports=hybrid_anchors,
             foundation_patch=FoundationPatch(k_area_n_per_mm3=k_steel, label="steel", **patch),
-            model_notes="Anclajes elásticos + parche de contacto acero (compresión-only).",
+            model_notes=f"Anclajes ({hybrid_support_kind}) + parche de contacto acero (compresión-only).",
+            support_type=hybrid_support_kind,
         ),
         SupportModelSpec(
-            key="foundation_patch_timber",
-            display_name="foundation_patch_timber",
+            key=f"foundation_patch_timber__{hybrid_support_kind}",
+            display_name=f"foundation_patch_timber__{hybrid_support_kind}",
             model_type="hybrid_springs_plus_foundation_patch",
-            supports=spring_anchors,
+            supports=hybrid_anchors,
             foundation_patch=FoundationPatch(k_area_n_per_mm3=k_timber, label="timber", **patch),
-            model_notes="Anclajes elásticos + parche de contacto madera (compresión-only).",
+            model_notes=f"Anclajes ({hybrid_support_kind}) + parche de contacto madera (compresión-only).",
+            support_type=hybrid_support_kind,
         ),
     ]
 
@@ -131,9 +152,10 @@ def run_support_model_matrix_benchmark(
     outdir: Path,
     models: Sequence[SupportModelSpec] | None = None,
     load_cases: Sequence[ProfisLikeCase] | None = None,
+    hybrid_support_kind: str = "spring",
 ) -> list[BenchmarkMatrixRow]:
     outdir.mkdir(parents=True, exist_ok=True)
-    models = list(models or default_matrix_models())
+    models = list(models or default_matrix_models(hybrid_support_kind=hybrid_support_kind))
     load_cases = list(load_cases or default_matrix_load_cases())
 
     rows: list[BenchmarkMatrixRow] = []
@@ -150,14 +172,49 @@ def run_support_model_matrix_benchmark(
             case_options = AnalysisOptions(**{**vars(options), "output_dir": str(case_dir)})
             foundation = [model.foundation_patch] if model.foundation_patch else []
 
-            result = solve_anchor_plate(
-                plate=plate,
-                supports=model.supports,
-                coupled_loads=[load],
-                options=case_options,
-                foundation_patches=foundation,
-                name=f"{model.key}__{lc.name}",
-            )
+            try:
+                result = solve_anchor_plate(
+                    plate=plate,
+                    supports=model.supports,
+                    coupled_loads=[load],
+                    options=case_options,
+                    foundation_patches=foundation,
+                    name=f"{model.key}__{lc.name}",
+                )
+            except RuntimeError as exc:
+                rows.append(
+                    BenchmarkMatrixRow(
+                        model_key=model.key,
+                        model_name=model.display_name,
+                        model_type=model.model_type,
+                        model_notes=model.model_notes,
+                        support_type=model.support_type or model.supports[0].kind,
+                        solve_status="failed",
+                        solve_error=str(exc),
+                        load_case=lc.name,
+                        load_description=lc.description,
+                        fz_kN=lc.fz_n / 1000.0,
+                        mx_kNm=lc.mx_nmm / 1e6,
+                        my_kNm=lc.my_nmm / 1e6,
+                        w_max_mm=float("nan"),
+                        sigma_vm_max_mpa=float("nan"),
+                        eta_plate=float("nan"),
+                        sum_reactions_kN=float("nan"),
+                        sum_spring_reactions_kN=float("nan"),
+                        sum_foundation_reactions_kN=float("nan"),
+                        rz_min_kN=float("nan"),
+                        rz_max_kN=float("nan"),
+                        contact_active_pct=None,
+                        contact_iterations=options.foundation_iterations_max,
+                        contact_converged=False,
+                        anchor_iterations=options.foundation_iterations_max,
+                        anchor_active_count=0,
+                        anchor_inactive_count=len(model.supports),
+                        anchor_reactions_kN_json="{}",
+                        k_area_n_per_mm3=float(model.foundation_patch.k_area_n_per_mm3) if model.foundation_patch else None,
+                    )
+                )
+                continue
 
             r_spring_kN = result.support_reactions_n / 1000.0
             foundation_kN = _foundation_total_reaction(result, foundation) / 1000.0 if foundation else 0.0
@@ -175,6 +232,12 @@ def run_support_model_matrix_benchmark(
                 n_iter = None
                 converged = None
                 k_area = None
+            anchor_reaction_map = {
+                (s.label or f"A{i+1}"): float(r_spring_kN[i]) for i, s in enumerate(model.supports)
+            }
+            anchor_active_count = int(np.sum(result.support_active))
+            anchor_inactive_count = int(len(result.support_active) - anchor_active_count)
+            anchor_iterations = int(len(result.anchor_spring_state.history_changes))
 
             rows.append(
                 BenchmarkMatrixRow(
@@ -182,6 +245,9 @@ def run_support_model_matrix_benchmark(
                     model_name=model.display_name,
                     model_type=model.model_type,
                     model_notes=model.model_notes,
+                    support_type=model.support_type or model.supports[0].kind,
+                    solve_status="ok",
+                    solve_error="",
                     load_case=lc.name,
                     load_description=lc.description,
                     fz_kN=lc.fz_n / 1000.0,
@@ -198,6 +264,10 @@ def run_support_model_matrix_benchmark(
                     contact_active_pct=pct_active,
                     contact_iterations=n_iter,
                     contact_converged=converged,
+                    anchor_iterations=anchor_iterations,
+                    anchor_active_count=anchor_active_count,
+                    anchor_inactive_count=anchor_inactive_count,
+                    anchor_reactions_kN_json=json.dumps(anchor_reaction_map, sort_keys=True),
                     k_area_n_per_mm3=k_area,
                 )
             )
@@ -237,13 +307,13 @@ def _save_matrix_markdown(rows: Sequence[BenchmarkMatrixRow], path: Path) -> Non
         "",
         "Comparación consolidada de `fixed`, `spring_anchors` y variantes `foundation_patch_*` bajo los mismos load cases.",
         "",
-        "| Modelo | Tipo de modelo | Caso | w_max [mm] | σ_vm,max [MPa] | η_plate | ΣR [kN] | Rz_min [kN] | Rz_max [kN] | Contacto activo [%] | Iter. contacto | k_area [N/mm³] |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Modelo | Tipo de modelo | Support type | Solve | Caso | w_max [mm] | σ_vm,max [MPa] | η_plate | ΣR [kN] | Rz_min [kN] | Rz_max [kN] | Anchors active/inactive | Iter. anchor | Contacto activo [%] | Iter. contacto | k_area [N/mm³] |",
+        "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|",
     ]
     for r in rows:
         lines.append(
-            f"| {r.model_name} | {r.model_type} | {r.load_case} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
-            f"| {r.sum_reactions_kN:.2f} | {r.rz_min_kN:.2f} | {r.rz_max_kN:.2f} | {_fmt_optional(r.contact_active_pct, '{:.1f}')} "
+            f"| {r.model_name} | {r.model_type} | {r.support_type} | {r.solve_status} | {r.load_case} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
+            f"| {r.sum_reactions_kN:.2f} | {r.rz_min_kN:.2f} | {r.rz_max_kN:.2f} | {r.anchor_active_count}/{r.anchor_inactive_count} | {_fmt_optional(r.anchor_iterations, '{}')} | {_fmt_optional(r.contact_active_pct, '{:.1f}')} "
             f"| {_fmt_optional(r.contact_iterations, '{}')} | {_fmt_optional(r.k_area_n_per_mm3, '{:.1f}')} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
