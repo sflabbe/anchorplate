@@ -13,3 +13,11 @@
 - alrededor de las dos líneas del perfil
 - en esquinas de la placa
 - cerca del borde de contacto si usas foundation compresión-solo
+
+## Convergencia de malla (coarse/medium/fine)
+
+- Usa un caso representativo (p.ej. placa 300×300×15 con 4 supports y `Fz + Mx`) y evalúa mínimo tres niveles de malla.
+- Reporta al menos: `n_nodes`, `n_elements`, `h_char`, `w_max`, `sigma_vm_max`, `Rmin/Rmax/ΣR`.
+- Para decidir malla por defecto prioriza métricas globales (`w_max`, `ΣR`) y equilibrio.
+- `sigma_vm_max` es útil como alerta, pero puede estar sesgado por singularidades nodales/locales; no lo uses como criterio único.
+- Con `examples/demo_mesh_convergence.py` puedes comparar además la opción con y sin `MeshRefinementBox` para ver sensibilidad local.
