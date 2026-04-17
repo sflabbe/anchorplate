@@ -30,7 +30,7 @@ import csv
 import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,10 +43,10 @@ from .model import (
     SteelLayer,
     SteelPlate,
 )
-from .mesh import nodal_tributary_areas
-from .plotting import _contact_summary, _foundation_masks, export_result_npz, plot_result, plot_result_3d
-from .solver import solve_anchor_plate
 from .support import bedding_concrete_simple, bedding_steel_layers, bedding_timber_simple
+
+if TYPE_CHECKING:
+    from .solver import Result
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ def default_load_cases() -> list[MaterialLoadCase]:
     ]
 
 
-def _foundation_total_reaction(result, foundation_patches: Sequence[FoundationPatch]) -> float:
+def _foundation_total_reaction(result: "Result", foundation_patches: Sequence[FoundationPatch]) -> float:
     """
     Compute the total upward reaction force from all active foundation nodes.
 
@@ -150,6 +150,8 @@ def _foundation_total_reaction(result, foundation_patches: Sequence[FoundationPa
     This is required for global equilibrium:
         sum(spring_reactions) + R_foundation ≈ applied_Fz
     """
+    from .mesh import nodal_tributary_areas
+
     tributary = nodal_tributary_areas(result.mesh)
     w = result.w_vertex_mm
     total = 0.0
@@ -202,6 +204,15 @@ def run_material_benchmark(
     List of MaterialBenchmarkRow — one per (material × load case).
     Sorted: material-first, then load case.
     """
+    from .plotting import (
+        _contact_summary,
+        _foundation_masks,
+        export_result_npz,
+        plot_result,
+        plot_result_3d,
+    )
+    from .solver import solve_anchor_plate
+
     materials  = list(materials  or default_materials())
     load_cases = list(load_cases or default_load_cases())
     options    = options or AnalysisOptions()
