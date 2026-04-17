@@ -1,3 +1,15 @@
+"""
+demo_single_case.py
+===================
+Caso mínimo end-to-end (placa + 4 anclajes fijos + una carga acoplada).
+
+Outputs en `outputs/demo_single_case/`:
+- `mesh.png`
+- `demo_single_case.png`
+- `demo_single_case_3d.png`
+- `demo_single_case_result.npz`
+"""
+
 from pathlib import Path
 
 from anchorplate.model import AnalysisOptions, CoupledLineLoad, MeshRefinementBox, PointSupport, SteelPlate

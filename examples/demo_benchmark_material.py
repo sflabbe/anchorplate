@@ -3,9 +3,10 @@ demo_benchmark_material.py
 ==========================
 Material benchmark for the compression-only foundation patch.
 
-Compares three bedding materials (grout / steel shim / timber) across four
-PROFIS-like load cases and writes a summary CSV, Markdown table, and two
-overview plots.
+Runs the same 3 material models (grout / steel / timber) and 4 compact load
+cases for both hybrid anchor laws:
+- spring
+- spring_tension_only
 
 Run
 ---
@@ -14,13 +15,16 @@ Run
 Output structure
 ----------------
     outputs/material_benchmark/
-        material_benchmark_summary.csv
-        material_benchmark_summary.md
-        overview_utilisation_contact.png
-        overview_contact_vs_stiffness.png
-        grout/LC01_Fz_centric/   (+ subfolders per case if save_plots=True)
-        steel/...
-        timber/...
+        spring/
+            material_benchmark_summary.csv
+            material_benchmark_summary.md
+            overview_utilisation_contact.png
+            overview_contact_vs_stiffness.png
+            grout/LC01_Fz_centric/...
+            steel/...
+            timber/...
+        spring_tension_only/
+            (same structure as spring/)
 """
 from __future__ import annotations
 

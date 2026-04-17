@@ -1,3 +1,16 @@
+"""
+demo_benchmark_springs.py
+=========================
+Misma familia benchmark que `demo_benchmark.py`, pero con 4 apoyos
+discretos elásticos (`kind="spring"`).
+
+Outputs:
+- `outputs/demo_benchmark_springs/benchmark_summary.csv`
+- `outputs/demo_benchmark_springs/benchmark_summary.md`
+- `outputs/demo_benchmark_springs/benchmark_overview.png`
+- `outputs/demo_benchmark_springs/<load_case>/...`
+"""
+
 from pathlib import Path
 
 from anchorplate.benchmark import run_profis_like_benchmark

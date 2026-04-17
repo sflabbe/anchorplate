@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+"""
+demo_mesh_convergence.py
+========================
+Estudio de convergencia de malla (coarse/medium/fine) para dos familias:
+- base (solo anclajes)
+- foundation (anclajes + patch de fundación)
+
+Outputs raíz: `outputs/demo_mesh_convergence/<mode>/` con CSVs de métricas,
+plots comparativos y subcarpetas por nivel de malla.
+"""
+
 import argparse
 import csv
 from dataclasses import asdict, dataclass

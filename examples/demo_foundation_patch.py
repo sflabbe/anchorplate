@@ -1,3 +1,16 @@
+"""
+demo_foundation_patch.py
+========================
+Caso híbrido con 4 anclajes tipo spring + foundation patch por zonas
+(hormigón/madera, compresión-only).
+
+Outputs en `outputs/demo_foundation_patch/`:
+- `mesh.png`
+- `demo_foundation_patch.png`
+- `demo_foundation_patch_3d.png`
+- `demo_foundation_patch_result.npz`
+"""
+
 from pathlib import Path
 
 from anchorplate.model import AnalysisOptions, CoupledLineLoad, FoundationPatch, MeshRefinementBox, PointSupport, SteelPlate
