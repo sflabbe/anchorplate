@@ -48,6 +48,22 @@ Main runtime dependencies:
 - `scikit-fem`
 - `pandas`
 
+## Public API and optional dependencies
+
+`anchorplate` keeps lightweight imports (`model`, `support`) separate from FE-heavy
+modules (`solver`, `plotting`, `benchmark`).
+
+- Safe in minimal environments (without `scikit-fem`):
+  - `import anchorplate.model`
+  - `import anchorplate.support`
+- FE features still live in explicit submodules:
+  - `from anchorplate.solver import solve_anchor_plate`
+  - `from anchorplate.plotting import plot_result_3d`
+  - `from anchorplate.benchmark import run_profis_like_benchmark`
+
+For backward compatibility, FE symbols remain available from `anchorplate` via lazy
+exports; attempting to use them without FE dependencies will raise a clear error.
+
 ## Quick start
 
 Run the smallest example first:

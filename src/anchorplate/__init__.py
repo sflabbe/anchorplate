@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from importlib import import_module
+
 from .model import (
     AnalysisOptions,
     ConcreteAdvancedInput,
@@ -18,9 +22,15 @@ from .support import (
     bedding_steel_layers,
     bedding_timber_simple,
 )
-from .solver import Result, solve_anchor_plate
-from .plotting import export_result_npz, plot_result_3d
-from .benchmark import run_profis_like_benchmark
+
+# Names that require optional FE/plotting dependencies.
+_LAZY_EXPORTS = {
+    "Result": ("anchorplate.solver", "Result"),
+    "solve_anchor_plate": ("anchorplate.solver", "solve_anchor_plate"),
+    "export_result_npz": ("anchorplate.plotting", "export_result_npz"),
+    "plot_result_3d": ("anchorplate.plotting", "plot_result_3d"),
+    "run_profis_like_benchmark": ("anchorplate.benchmark", "run_profis_like_benchmark"),
+}
 
 __all__ = [
     "AnalysisOptions",
@@ -39,9 +49,26 @@ __all__ = [
     "bedding_nodal_from_area",
     "bedding_steel_layers",
     "bedding_timber_simple",
-    "Result",
-    "solve_anchor_plate",
-    "export_result_npz",
-    "plot_result_3d",
-    "run_profis_like_benchmark",
+    *_LAZY_EXPORTS.keys(),
 ]
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    try:
+        module = import_module(module_name)
+        value = getattr(module, attr_name)
+    except ModuleNotFoundError as exc:
+        if exc.name and exc.name.startswith("skfem"):
+            raise ModuleNotFoundError(
+                f"'{name}' requiere dependencias FE opcionales. "
+                "Instala 'scikit-fem' o importa solo submódulos livianos "
+                "como anchorplate.model / anchorplate.support."
+            ) from exc
+        raise
+
+    globals()[name] = value
+    return value
