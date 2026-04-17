@@ -61,16 +61,16 @@ def main() -> None:
 
     print(f"Casos resueltos: {len(rows)}")
     print(
-        f"\n{'Modelo':<45} {'LC':<20} {'Anchors':>10} {'ΣR_anchor [kN]':>14} {'ΣR_found [kN]':>13}"
+        f"\n{'Modelo':<45} {'LC':<20} {'Status':<30} {'Valid':<6} {'Anchors':>10} {'ΣR_anchor [kN]':>14} {'ΣR_found [kN]':>13} {'Eq.err [kN]':>11}"
     )
     print("-" * 115)
     for r in rows:
         if "foundation_patch" not in r.model_name:
             continue
         print(
-            f"{r.model_name:<45} {r.load_case:<20} "
+            f"{r.model_name:<45} {r.load_case:<20} {r.solve_status:<30} {str(r.valid_solution):<6} "
             f"{f'{r.anchor_active_count}/{r.anchor_inactive_count}':>10} "
-            f"{r.sum_spring_reactions_kN:>14.2f} {r.sum_foundation_reactions_kN:>13.2f}"
+            f"{r.sum_spring_reactions_kN:>14.2f} {r.sum_foundation_reactions_kN:>13.2f} {r.equilibrium_error_kN:>11.3f}"
         )
     print(f"Resultados en: {outdir.resolve()}")
 

@@ -37,5 +37,7 @@ Runnable scripts for the main analysis/benchmark modes.
 - Benchmark positioning (hybrid modes, anchor-dominant framing):
   - `docs/hybrid_anchor_support_modes.md`
   - `docs/anchor_dominant_note.md`
+- Validity gate for hybrid benchmark outputs:
+  - `docs/hybrid_benchmark_validity_policy.md`
 
 All files under `outputs/...` are generated artifacts.

@@ -11,6 +11,7 @@ import numpy as np
 
 from .benchmark import ProfisLikeCase, project_case_to_plate
 from .benchmark_material import _foundation_total_reaction
+from .benchmark_validity import classify_case_validity
 from .model import AnalysisOptions, FoundationPatch, PointSupport, SteelLayer, SteelPlate
 from .plotting import _contact_summary, _foundation_masks
 from .solver import solve_anchor_plate
@@ -40,7 +41,10 @@ class BenchmarkMatrixRow:
     model_notes: str
     support_type: str
     solve_status: str
+    valid_solution: bool
+    metrics_comparable: bool
     solve_error: str
+    failure_reason: str
     load_case: str
     load_description: str
     fz_kN: float
@@ -62,6 +66,9 @@ class BenchmarkMatrixRow:
     anchor_inactive_count: int
     anchor_reactions_kN_json: str
     k_area_n_per_mm3: float | None
+    equilibrium_error_kN: float
+    equilibrium_ok: bool
+    equilibrium_tol_kN: float
 
 
 def default_matrix_load_cases() -> list[ProfisLikeCase]:
@@ -181,7 +188,25 @@ def run_support_model_matrix_benchmark(
                     foundation_patches=foundation,
                     name=f"{model.key}__{lc.name}",
                 )
+                initial_status = "ok"
+                solve_error = ""
             except RuntimeError as exc:
+                solve_error = str(exc)
+                validity = classify_case_validity(
+                    initial_solve_status="failed",
+                    solve_error=solve_error,
+                    expected_vertical_load_kN=lc.fz_n / 1000.0,
+                    total_reactions_kN=0.0,
+                    contact_converged=False,
+                    requires_contact_convergence=bool(foundation),
+                    has_foundation_patch=bool(foundation),
+                    support_type=model.support_type or model.supports[0].kind,
+                    force_n=lc.fz_n,
+                    mx_nmm=lc.mx_nmm,
+                    my_nmm=lc.my_nmm,
+                    equilibrium_tol_abs_kN=case_options.equilibrium_tol_abs_kN,
+                    equilibrium_tol_rel=case_options.equilibrium_tol_rel,
+                )
                 rows.append(
                     BenchmarkMatrixRow(
                         model_key=model.key,
@@ -189,8 +214,11 @@ def run_support_model_matrix_benchmark(
                         model_type=model.model_type,
                         model_notes=model.model_notes,
                         support_type=model.support_type or model.supports[0].kind,
-                        solve_status="failed",
-                        solve_error=str(exc),
+                        solve_status=validity.solve_status,
+                        valid_solution=validity.valid_solution,
+                        metrics_comparable=validity.metrics_comparable,
+                        solve_error=solve_error,
+                        failure_reason=validity.failure_reason,
                         load_case=lc.name,
                         load_description=lc.description,
                         fz_kN=lc.fz_n / 1000.0,
@@ -212,6 +240,9 @@ def run_support_model_matrix_benchmark(
                         anchor_inactive_count=len(model.supports),
                         anchor_reactions_kN_json="{}",
                         k_area_n_per_mm3=float(model.foundation_patch.k_area_n_per_mm3) if model.foundation_patch else None,
+                        equilibrium_error_kN=validity.equilibrium_error_kN,
+                        equilibrium_ok=validity.equilibrium_ok,
+                        equilibrium_tol_kN=validity.equilibrium_tol_kN,
                     )
                 )
                 continue
@@ -239,6 +270,21 @@ def run_support_model_matrix_benchmark(
             anchor_inactive_count = int(len(result.support_active) - anchor_active_count)
             anchor_iterations = int(len(result.anchor_spring_state.history_changes))
 
+            validity = classify_case_validity(
+                initial_solve_status=initial_status,
+                solve_error=solve_error,
+                expected_vertical_load_kN=lc.fz_n / 1000.0,
+                total_reactions_kN=total_kN,
+                contact_converged=converged,
+                requires_contact_convergence=bool(foundation),
+                has_foundation_patch=bool(foundation),
+                support_type=model.support_type or model.supports[0].kind,
+                force_n=lc.fz_n,
+                mx_nmm=lc.mx_nmm,
+                my_nmm=lc.my_nmm,
+                equilibrium_tol_abs_kN=case_options.equilibrium_tol_abs_kN,
+                equilibrium_tol_rel=case_options.equilibrium_tol_rel,
+            )
             rows.append(
                 BenchmarkMatrixRow(
                     model_key=model.key,
@@ -246,8 +292,11 @@ def run_support_model_matrix_benchmark(
                     model_type=model.model_type,
                     model_notes=model.model_notes,
                     support_type=model.support_type or model.supports[0].kind,
-                    solve_status="ok",
-                    solve_error="",
+                    solve_status=validity.solve_status,
+                    valid_solution=validity.valid_solution,
+                    metrics_comparable=validity.metrics_comparable,
+                    solve_error=solve_error,
+                    failure_reason=validity.failure_reason,
                     load_case=lc.name,
                     load_description=lc.description,
                     fz_kN=lc.fz_n / 1000.0,
@@ -269,6 +318,9 @@ def run_support_model_matrix_benchmark(
                     anchor_inactive_count=anchor_inactive_count,
                     anchor_reactions_kN_json=json.dumps(anchor_reaction_map, sort_keys=True),
                     k_area_n_per_mm3=k_area,
+                    equilibrium_error_kN=validity.equilibrium_error_kN,
+                    equilibrium_ok=validity.equilibrium_ok,
+                    equilibrium_tol_kN=validity.equilibrium_tol_kN,
                 )
             )
 
@@ -307,13 +359,13 @@ def _save_matrix_markdown(rows: Sequence[BenchmarkMatrixRow], path: Path) -> Non
         "",
         "Comparación consolidada de `fixed`, `spring_anchors` y variantes `foundation_patch_*` bajo los mismos load cases.",
         "",
-        "| Modelo | Tipo de modelo | Support type | Solve | Caso | w_max [mm] | σ_vm,max [MPa] | η_plate | ΣR [kN] | Rz_min [kN] | Rz_max [kN] | Anchors active/inactive | Iter. anchor | Contacto activo [%] | Iter. contacto | k_area [N/mm³] |",
-        "|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|",
+        "| Modelo | Tipo de modelo | Support type | Solve | Valid | Comparable metrics | Failure reason | Caso | w_max [mm] | σ_vm,max [MPa] | η_plate | ΣR [kN] | Eq.err [kN] | Eq.ok | Rz_min [kN] | Rz_max [kN] | Anchors active/inactive | Iter. anchor | Contacto activo [%] | Iter. contacto | k_area [N/mm³] |",
+        "|---|---|---|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---|---:|---:|---:|---:|",
     ]
     for r in rows:
         lines.append(
-            f"| {r.model_name} | {r.model_type} | {r.support_type} | {r.solve_status} | {r.load_case} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
-            f"| {r.sum_reactions_kN:.2f} | {r.rz_min_kN:.2f} | {r.rz_max_kN:.2f} | {r.anchor_active_count}/{r.anchor_inactive_count} | {_fmt_optional(r.anchor_iterations, '{}')} | {_fmt_optional(r.contact_active_pct, '{:.1f}')} "
+            f"| {r.model_name} | {r.model_type} | {r.support_type} | {r.solve_status} | {r.valid_solution} | {r.metrics_comparable} | {r.failure_reason or '—'} | {r.load_case} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
+            f"| {r.sum_reactions_kN:.2f} | {r.equilibrium_error_kN:.3f} | {r.equilibrium_ok} | {r.rz_min_kN:.2f} | {r.rz_max_kN:.2f} | {r.anchor_active_count}/{r.anchor_inactive_count} | {_fmt_optional(r.anchor_iterations, '{}')} | {_fmt_optional(r.contact_active_pct, '{:.1f}')} "
             f"| {_fmt_optional(r.contact_iterations, '{}')} | {_fmt_optional(r.k_area_n_per_mm3, '{:.1f}')} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -333,9 +385,9 @@ def _save_overview_plot(rows: Sequence[BenchmarkMatrixRow], path: Path) -> None:
 
     for m_idx, model in enumerate(models):
         sub = [r for r in rows if r.model_name == model]
-        eta = [next((r.eta_plate for r in sub if r.load_case == c), np.nan) for c in cases]
-        w = [next((r.w_max_mm for r in sub if r.load_case == c), np.nan) for c in cases]
-        s = [next((r.sigma_vm_max_mpa for r in sub if r.load_case == c), np.nan) for c in cases]
+        eta = [next((r.eta_plate for r in sub if r.load_case == c and r.metrics_comparable), np.nan) for c in cases]
+        w = [next((r.w_max_mm for r in sub if r.load_case == c and r.metrics_comparable), np.nan) for c in cases]
+        s = [next((r.sigma_vm_max_mpa for r in sub if r.load_case == c and r.metrics_comparable), np.nan) for c in cases]
         x = idx + (m_idx - (len(models) - 1) / 2.0) * width
         axes[0].bar(x, eta, width=width, label=model, color=colors[m_idx % len(colors)])
         axes[1].bar(x, w, width=width, color=colors[m_idx % len(colors)])
@@ -363,7 +415,7 @@ def _save_technical_note(rows: Sequence[BenchmarkMatrixRow], path: Path) -> None
         return
 
     def _avg(model_name: str, attr: str) -> float:
-        vals = [getattr(r, attr) for r in rows if r.model_name == model_name]
+        vals = [getattr(r, attr) for r in rows if r.model_name == model_name and r.metrics_comparable]
         return float(np.mean(vals)) if vals else float("nan")
 
     refs = {
@@ -383,6 +435,8 @@ def _save_technical_note(rows: Sequence[BenchmarkMatrixRow], path: Path) -> None
         "manteniendo iguales geometría y cargas.",
         "",
         "## Tendencias observadas (promedio sobre los 4 casos)",
+        "",
+        "Promedios calculados solo con filas `metrics_comparable = true`.",
         "",
     ]
     for model, stats in refs.items():
