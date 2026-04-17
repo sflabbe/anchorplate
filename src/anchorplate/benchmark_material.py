@@ -27,6 +27,7 @@ Materials
 from __future__ import annotations
 
 import csv
+import json
 import textwrap
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -43,7 +44,12 @@ from .model import (
     SteelLayer,
     SteelPlate,
 )
-from .support import bedding_concrete_simple, bedding_steel_layers, bedding_timber_simple
+from .support import (
+    SupportMaterialModelResult,
+    support_material_concrete_simple,
+    support_material_steel_layers_simple,
+    support_material_timber_simple,
+)
 
 if TYPE_CHECKING:
     from .solver import Result
@@ -60,6 +66,9 @@ class MaterialSpec:
     label: str                  # short ASCII key for filenames
     k_area_n_per_mm3: float     # Winkler stiffness [N/mm³]
     description: str = ""
+    model_name: str = "legacy"
+    parameters: dict[str, object] | None = None
+    notes: str = ""
 
 
 @dataclass(frozen=True)
@@ -80,7 +89,10 @@ class MaterialLoadCase:
 @dataclass
 class MaterialBenchmarkRow:
     material:                    str
+    model_name:                  str
     k_area_n_mm3:                float
+    model_parameters_json:       str
+    model_notes:                 str
     load_case:                   str
     load_description:            str
     force_kN:                    float
@@ -113,14 +125,65 @@ class MaterialBenchmarkRow:
 # ---------------------------------------------------------------------------
 
 def default_materials() -> list[MaterialSpec]:
-    k_concrete = bedding_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
-    k_steel    = bedding_steel_layers([SteelLayer(thickness_mm=10.0, youngs_modulus_mpa=210_000.0)])
-    k_timber   = bedding_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
+    concrete = support_material_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
+    steel = support_material_steel_layers_simple(
+        [SteelLayer(thickness_mm=10.0, youngs_modulus_mpa=210_000.0)]
+    )
+    timber = support_material_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
     return [
-        MaterialSpec("Grout C25/30 h=50 mm",  "grout",  k_concrete, "E_cm=32000 MPa, h_eff=50 mm"),
-        MaterialSpec("Steel S235 t=10 mm",     "steel",  k_steel,    "E=210000 MPa, t=10 mm"),
-        MaterialSpec("Timber GL24h h=50 mm",   "timber", k_timber,   "E_90=390 MPa, h_eff=50 mm"),
+        _material_spec_from_model_result(
+            name="Grout C25/30 h=50 mm",
+            label="grout",
+            description="E_cm=32000 MPa, h_eff=50 mm",
+            model=concrete,
+        ),
+        _material_spec_from_model_result(
+            name="Steel S235 t=10 mm",
+            label="steel",
+            description="E=210000 MPa, t=10 mm",
+            model=steel,
+        ),
+        _material_spec_from_model_result(
+            name="Timber GL24h h=50 mm",
+            label="timber",
+            description="E_90=390 MPa, h_eff=50 mm",
+            model=timber,
+        ),
     ]
+
+
+def _material_spec_from_model_result(
+    name: str,
+    label: str,
+    description: str,
+    model: SupportMaterialModelResult,
+) -> MaterialSpec:
+    return MaterialSpec(
+        name=name,
+        label=label,
+        k_area_n_per_mm3=model.k_area_n_per_mm3,
+        description=description,
+        model_name=model.model_name,
+        parameters=model.parameters,
+        notes=model.notes,
+    )
+
+
+def material_spec_from_model_result(
+    name: str,
+    label: str,
+    model: SupportMaterialModelResult,
+    description: str = "",
+) -> MaterialSpec:
+    """
+    Public helper: create benchmark MaterialSpec from SupportMaterialModelResult.
+    """
+    return _material_spec_from_model_result(
+        name=name,
+        label=label,
+        description=description,
+        model=model,
+    )
 
 
 def default_load_cases() -> list[MaterialLoadCase]:
@@ -286,6 +349,17 @@ def run_material_benchmark(
             # NPZ + contact summary
             if case_opts.save_result_npz:
                 export_result_npz(result, case_dir / f"{case_name}_result.npz")
+                metadata = {
+                    "material_name": mat.name,
+                    "material_label": mat.label,
+                    "model_name": mat.model_name,
+                    "parameters": mat.parameters or {},
+                    "notes": mat.notes,
+                }
+                (case_dir / f"{case_name}_material_model.json").write_text(
+                    json.dumps(metadata, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
 
             # Collect contact stats
             active_mask, inactive_mask = _foundation_masks(result)
@@ -295,7 +369,10 @@ def run_material_benchmark(
 
             rows.append(MaterialBenchmarkRow(
                 material=mat.name,
+                model_name=mat.model_name,
                 k_area_n_mm3=mat.k_area_n_per_mm3,
+                model_parameters_json=json.dumps(mat.parameters or {}, sort_keys=True),
+                model_notes=mat.notes,
                 load_case=lc.name,
                 load_description=lc.description,
                 force_kN=lc.force_n / 1000.0,
@@ -349,13 +426,13 @@ def _save_markdown(rows: Sequence[MaterialBenchmarkRow], path: Path) -> None:
     header = textwrap.dedent("""\
         # Material benchmark — foundation patch (compression-only)
 
-        | Material | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] |
-        |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+        | Material | Model | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] |
+        |---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
     """)
     lines = [header.rstrip()]
     for r in rows:
         lines.append(
-            f"| {r.material} | {r.k_area_n_mm3:.1f} | {r.load_case} "
+            f"| {r.material} | {r.model_name} | {r.k_area_n_mm3:.1f} | {r.load_case} "
             f"| {r.force_kN:.0f} | {r.mx_kNm:.1f} | {r.my_kNm:.1f} "
             f"| {r.pct_active:.1f} | {r.pct_inactive:.1f} | {r.n_iterations} "
             f"| {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "

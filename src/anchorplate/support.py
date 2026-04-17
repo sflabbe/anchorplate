@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import sqrt
-from typing import Iterable, Sequence
+from typing import Any, Sequence
 
 from .model import ConcreteAdvancedInput, SteelLayer
+
+
+@dataclass(frozen=True)
+class SupportMaterialModelResult:
+    """Normalized/traceable result of a bedding/support material model."""
+    k_area_n_per_mm3: float
+    model_name: str
+    parameters: dict[str, Any]
+    notes: str = ""
 
 
 def bedding_concrete_simple(e_cm_mpa: float, h_eff_mm: float) -> float:
@@ -56,3 +65,85 @@ def bedding_nodal_from_area(k_area_n_per_mm3: float, tributary_area_mm2: float) 
     if k_area_n_per_mm3 < 0.0 or tributary_area_mm2 < 0.0:
         raise ValueError("Inputs must be non-negative")
     return float(k_area_n_per_mm3) * float(tributary_area_mm2)
+
+
+def support_material_concrete_simple(e_cm_mpa: float, h_eff_mm: float) -> SupportMaterialModelResult:
+    """Wrapper API for bedding_concrete_simple with explicit metadata."""
+    return SupportMaterialModelResult(
+        k_area_n_per_mm3=bedding_concrete_simple(e_cm_mpa=e_cm_mpa, h_eff_mm=h_eff_mm),
+        model_name="concrete_simple",
+        parameters={
+            "e_cm_mpa": float(e_cm_mpa),
+            "h_eff_mm": float(h_eff_mm),
+        },
+        notes="Simple linear estimate k = E_cm / h_eff.",
+    )
+
+
+def support_material_concrete_advanced(inp: ConcreteAdvancedInput) -> SupportMaterialModelResult:
+    """Wrapper API for bedding_concrete_advanced with explicit metadata."""
+    return SupportMaterialModelResult(
+        k_area_n_per_mm3=bedding_concrete_advanced(inp),
+        model_name="concrete_advanced",
+        parameters={
+            "e_cm_mpa": float(inp.e_cm_mpa),
+            "nu": float(inp.nu),
+            "a_eff_mm2": float(inp.a_eff_mm2),
+            "a_ref_mm2": float(inp.a_ref_mm2),
+            "h_block_mm": float(inp.h_block_mm),
+            "d_plate_mm": float(inp.d_plate_mm),
+        },
+        notes="Advanced geometry/area-corrected concrete model used in legacy helper.",
+    )
+
+
+def support_material_timber_simple(
+    e90_mpa: float,
+    h_eff_mm: float,
+    spread_factor: float = 1.0,
+) -> SupportMaterialModelResult:
+    """Wrapper API for bedding_timber_simple with explicit metadata."""
+    return SupportMaterialModelResult(
+        k_area_n_per_mm3=bedding_timber_simple(
+            e90_mpa=e90_mpa,
+            h_eff_mm=h_eff_mm,
+            spread_factor=spread_factor,
+        ),
+        model_name="timber_simple",
+        parameters={
+            "e90_mpa": float(e90_mpa),
+            "h_eff_mm": float(h_eff_mm),
+            "spread_factor": float(spread_factor),
+        },
+        notes="Simple linear estimate k = spread_factor * E90 / h_eff.",
+    )
+
+
+def support_material_steel_layers_simple(layers: Sequence[SteelLayer]) -> SupportMaterialModelResult:
+    """Wrapper API for bedding_steel_layers with explicit metadata."""
+    return SupportMaterialModelResult(
+        k_area_n_per_mm3=bedding_steel_layers(layers),
+        model_name="steel_layers_simple",
+        parameters={
+            "layers": [
+                {
+                    "thickness_mm": float(layer.thickness_mm),
+                    "youngs_modulus_mpa": float(layer.youngs_modulus_mpa),
+                }
+                for layer in layers
+            ],
+        },
+        notes="Series-compliance model (1/k = Σ(t_i/E_i)) for stacked layers.",
+    )
+
+
+def support_material_calibrated(k_area_n_per_mm3: float) -> SupportMaterialModelResult:
+    """Wrapper API for bedding_calibrated with explicit metadata."""
+    return SupportMaterialModelResult(
+        k_area_n_per_mm3=bedding_calibrated(k_area_n_per_mm3),
+        model_name="calibrated",
+        parameters={
+            "k_area_n_per_mm3": float(k_area_n_per_mm3),
+        },
+        notes="Direct user-calibrated stiffness, no constitutive back-calculation.",
+    )

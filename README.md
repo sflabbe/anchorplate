@@ -29,6 +29,7 @@ It is **not** a full anchor design package. The following topics are intentional
 - nodal point supports as either fixed supports or vertical springs `Kz`
 - reference-point style load transfer to two parallel lines from `Fz`, `Mx`, and `My`
 - bedding models for concrete, timber, steel layers, and calibrated user input
+- traceable support-material wrapper API with model metadata (`model_name`, parameters, notes)
 - compression-only foundation patches with active/inactive contact masks
 - 2D and 3D plotting utilities
 - NPZ export for post-processing and debugging
@@ -79,6 +80,42 @@ python examples/demo_benchmark.py
 ```
 
 Outputs are written to `outputs/...` and are intentionally ignored by Git.
+
+## Support material API (clean + traceable)
+
+Use the high-level support material wrappers when you want explicit metadata for
+benchmarking and result tracking:
+
+```python
+from anchorplate.benchmark_material import material_spec_from_model_result
+from anchorplate.model import SteelLayer
+from anchorplate.support import (
+    support_material_concrete_simple,
+    support_material_steel_layers_simple,
+    support_material_timber_simple,
+)
+
+grout = support_material_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
+steel = support_material_steel_layers_simple(
+    [SteelLayer(thickness_mm=10.0, youngs_modulus_mpa=210_000.0)]
+)
+timber = support_material_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
+
+materials = [
+    material_spec_from_model_result("Grout C25/30 h=50 mm", "grout", grout),
+    material_spec_from_model_result("Steel S235 t=10 mm", "steel", steel),
+    material_spec_from_model_result("Timber GL24h h=50 mm", "timber", timber),
+]
+```
+
+Each wrapper returns:
+
+- `k_area_n_per_mm3`
+- `model_name`
+- `parameters`
+- `notes`
+
+The material benchmark includes this metadata in CSV rows and Markdown summaries.
 
 ## Examples
 

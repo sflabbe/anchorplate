@@ -27,10 +27,11 @@ from anchorplate.benchmark_material import (
     MaterialSpec,
     default_load_cases,
     default_materials,
+    material_spec_from_model_result,
     run_material_benchmark,
 )
 from anchorplate.model import AnalysisOptions, PointSupport, SteelPlate
-from anchorplate.support import bedding_concrete_simple, bedding_timber_simple
+from anchorplate.support import support_material_concrete_simple, support_material_timber_simple
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +57,12 @@ OPTS_FAST = AnalysisOptions(
 )
 
 # Two contrasting materials: soft (timber) and stiff (grout)
-_k_grout  = bedding_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
-_k_timber = bedding_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
+_grout_model = support_material_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
+_timber_model = support_material_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
 
 TWO_MATERIALS = [
-    MaterialSpec("Grout",  "grout",  _k_grout,  "stiff"),
-    MaterialSpec("Timber", "timber", _k_timber, "soft"),
+    material_spec_from_model_result("Grout", "grout", _grout_model, description="stiff"),
+    material_spec_from_model_result("Timber", "timber", _timber_model, description="soft"),
 ]
 
 TWO_CASES = [
@@ -108,6 +109,11 @@ class TestRowCount:
         lcs = {r.load_case for r in bmark_rows}
         for lc in TWO_CASES:
             assert lc.name in lcs
+
+    def test_model_metadata_in_rows(self, bmark_rows):
+        for r in bmark_rows:
+            assert r.model_name
+            assert r.model_parameters_json.startswith("{")
 
 
 # ---------------------------------------------------------------------------
