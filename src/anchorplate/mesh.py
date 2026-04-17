@@ -3,9 +3,12 @@ from __future__ import annotations
 from typing import Iterable, Sequence
 
 import numpy as np
-from skfem import MeshTri
+from skfem import MeshQuad, MeshTri
 
 from .model import AnalysisOptions, CoupledLineLoad, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
+
+
+MeshType = MeshTri | MeshQuad
 
 
 def _unique_sorted(values: Iterable[float], ndigits: int = 10) -> np.ndarray:
@@ -112,7 +115,7 @@ def build_mesh(
     coupled_loads: Sequence[CoupledLineLoad],
     options: AnalysisOptions,
     refinement_boxes: Sequence[MeshRefinementBox] | None = None,
-) -> MeshTri:
+) -> MeshType:
     x_seeds: list[float] = []
     y_seeds: list[float] = []
 
@@ -159,10 +162,12 @@ def build_mesh(
 
     x = make_axis_grid(plate.length_mm, options.target_h_mm, x_seeds, refinement_specs=x_specs)
     y = make_axis_grid(plate.width_mm, options.target_h_mm, y_seeds, refinement_specs=y_specs)
+    if options.mesh_backend == "quad_bfs":
+        return MeshQuad.init_tensor(x, y)
     return MeshTri.init_tensor(x, y)
 
 
-def nearest_vertex_ids(mesh: MeshTri, xy_mm: np.ndarray) -> np.ndarray:
+def nearest_vertex_ids(mesh: MeshType, xy_mm: np.ndarray) -> np.ndarray:
     vertices = mesh.p.T
     out = []
     for xy in xy_mm:
@@ -176,7 +181,7 @@ def vertex_dofs_for_ids(basis, vertex_ids: np.ndarray) -> np.ndarray:
 
 
 def line_vertex_ids(
-    mesh: MeshTri,
+    mesh: MeshType,
     x_const: float | None,
     y_const: float | None,
     span_min: float,
@@ -196,24 +201,38 @@ def line_vertex_ids(
     return ids[order]
 
 
-def triangle_connectivity(mesh: MeshTri) -> np.ndarray:
-    return mesh.t[:3, :].T.copy()
+def element_connectivity(mesh: MeshType) -> np.ndarray:
+    return mesh.t.T.copy()
 
 
-def triangle_areas(mesh: MeshTri) -> np.ndarray:
-    tri = triangle_connectivity(mesh)
+def triangle_connectivity(mesh: MeshType) -> np.ndarray:
+    conn = element_connectivity(mesh)
+    if conn.shape[1] == 3:
+        return conn
+    if conn.shape[1] == 4:
+        tri1 = conn[:, [0, 1, 2]]
+        tri2 = conn[:, [0, 2, 3]]
+        return np.vstack([tri1, tri2])
+    raise ValueError(f"Unsupported element vertex count for triangulation: {conn.shape[1]}")
+
+
+def element_areas(mesh: MeshType) -> np.ndarray:
+    conn = element_connectivity(mesh)
     p = mesh.p.T
-    a = p[tri[:, 0]]
-    b = p[tri[:, 1]]
-    c = p[tri[:, 2]]
-    return 0.5 * np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0]))
+    poly = p[conn]
+    x = poly[:, :, 0]
+    y = poly[:, :, 1]
+    x_next = np.roll(x, -1, axis=1)
+    y_next = np.roll(y, -1, axis=1)
+    return 0.5 * np.abs(np.sum(x * y_next - y * x_next, axis=1))
 
 
-def nodal_tributary_areas(mesh: MeshTri) -> np.ndarray:
-    tri = triangle_connectivity(mesh)
-    areas = triangle_areas(mesh)
+def nodal_tributary_areas(mesh: MeshType) -> np.ndarray:
+    conn = element_connectivity(mesh)
+    areas = element_areas(mesh)
     n_vertices = mesh.p.shape[1]
     nodal = np.zeros(n_vertices, dtype=float)
-    for local in range(3):
-        np.add.at(nodal, tri[:, local], areas / 3.0)
+    n_local = conn.shape[1]
+    for local in range(n_local):
+        np.add.at(nodal, conn[:, local], areas / n_local)
     return nodal

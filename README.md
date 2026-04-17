@@ -90,6 +90,7 @@ src/anchorplate/
   benchmark_material.py         equivalent-stiffness material benchmark
   benchmark_matrix.py           support-model matrix benchmark
   benchmark_anchor_dominant.py  anchor-dominant benchmark
+  benchmark_backend.py          tri_morley vs quad_bfs experimental comparison
 
 examples/
   demo_single_case.py
@@ -101,6 +102,7 @@ examples/
   demo_benchmark_matrix.py
   demo_anchor_dominant.py
   demo_mesh_convergence.py
+  demo_mesh_backend_benchmark.py
   verify_benchmark_csv.py
 
 docs/
@@ -120,6 +122,7 @@ docs/
 - `demo_benchmark_matrix.py`: consolidated matrix across `fixed`, `spring_anchors`, and `foundation_patch_*` models for both discrete support modes.
 - `demo_anchor_dominant.py`: focused benchmark for anchor-dominant vs small/soft-patch behavior.
 - `demo_mesh_convergence.py`: coarse/medium/fine convergence study (with/without refinement boxes).
+- `demo_mesh_backend_benchmark.py`: experimental comparison `tri_morley` vs `quad_bfs` for plate-only load cases (`Fz`, `Fz+Mx`).
 
 ## Mini interpretation guide (selected scripts)
 
@@ -184,6 +187,15 @@ See `docs/hybrid_benchmark_validity_policy.md` for the explicit validity policy 
   - `contact_summary.txt`
 
 See `docs/contact_liftoff_guide.md` for detailed sign convention and mask interpretation.
+
+## Experimental mesh backend selector
+
+`analysis_options.mesh_backend` accepts:
+
+- `"tri_morley"` (default, production reference)
+- `"quad_bfs"` (experimental 2D Kirchhoff plate backend)
+
+This is a **2D plate backend switch** only. It is intentionally not a 3D-solid (`hex`) formulation swap.
 
 ## Main outputs
 
@@ -256,3 +268,4 @@ pytest -q
 - `docs/hybrid_anchor_support_modes.md`
 - `docs/anchor_dominant_note.md`
 - `docs/notes.md`
+- `docs/quad_backend_experimental_note.md`
