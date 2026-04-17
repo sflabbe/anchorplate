@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import csv
 import textwrap
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
@@ -164,7 +164,8 @@ def _foundation_total_reaction(result: "Result", foundation_patches: Sequence[Fo
     return total
 
 
-
+def default_spring_supports() -> list[PointSupport]:
+    """Default 4-corner M16 spring supports used in the benchmark scenario."""
     return [
         PointSupport(30.0,  30.0,  kind="spring", kz_n_per_mm=150_000.0, label="A1"),
         PointSupport(270.0, 30.0,  kind="spring", kz_n_per_mm=150_000.0, label="A2"),
@@ -179,7 +180,7 @@ def _foundation_total_reaction(result: "Result", foundation_patches: Sequence[Fo
 
 def run_material_benchmark(
     plate: SteelPlate,
-    supports: Sequence[PointSupport],
+    supports: Sequence[PointSupport] | None = None,
     materials: Sequence[MaterialSpec] | None = None,
     load_cases: Sequence[MaterialLoadCase] | None = None,
     options: AnalysisOptions | None = None,
@@ -192,7 +193,8 @@ def run_material_benchmark(
     Parameters
     ----------
     plate           : SteelPlate geometry and material.
-    supports        : List of PointSupport (spring or fixed).
+    supports        : List of PointSupport (spring or fixed). If None, default
+                      4-corner spring supports are used.
     materials       : Bedding materials to compare; defaults to grout / steel / timber.
     load_cases      : Load combinations; defaults to LC01–LC04.
     options         : AnalysisOptions template (output_dir is overridden per case).
@@ -215,6 +217,7 @@ def run_material_benchmark(
 
     materials  = list(materials  or default_materials())
     load_cases = list(load_cases or default_load_cases())
+    supports   = list(supports or default_spring_supports())
     options    = options or AnalysisOptions()
     outdir     = outdir or Path(options.output_dir) / "material_benchmark"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -267,7 +270,7 @@ def run_material_benchmark(
 
             result = solve_anchor_plate(
                 plate=plate,
-                supports=list(supports),
+                supports=supports,
                 coupled_loads=[coupled_load],
                 options=case_opts,
                 foundation_patches=foundation,
@@ -276,9 +279,9 @@ def run_material_benchmark(
 
             # Plots
             if case_opts.save_plots:
-                plot_result(plate, list(supports), [], [coupled_load], result, case_opts)
+                plot_result(plate, supports, [], [coupled_load], result, case_opts)
             if case_opts.save_3d_plots:
-                plot_result_3d(plate, list(supports), result, case_opts)
+                plot_result_3d(plate, supports, result, case_opts)
 
             # NPZ + contact summary
             if case_opts.save_result_npz:
@@ -329,10 +332,15 @@ def _save_csv(rows: Sequence[MaterialBenchmarkRow], path: Path) -> None:
     if not rows:
         return
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(asdict(rows[0]).keys()))
+        writer = csv.DictWriter(f, fieldnames=list(_serialize_row(rows[0]).keys()))
         writer.writeheader()
         for row in rows:
-            writer.writerow(asdict(row))
+            writer.writerow(_serialize_row(row))
+
+
+def _serialize_row(row: MaterialBenchmarkRow) -> dict[str, object]:
+    """Stable dataclass serialization helper for benchmark summary outputs."""
+    return asdict(row)
 
 
 def _save_markdown(rows: Sequence[MaterialBenchmarkRow], path: Path) -> None:
