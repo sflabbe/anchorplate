@@ -1,102 +1,95 @@
 # anchorplate
 
-Finite element prototype for **steel anchor plates** using a **Kirchhoff-Love plate model** with the **Morley triangular element** via `scikit-fem`.
+Finite-element prototype for **steel anchor plates** based on a **Kirchhoff–Love plate bending model** (`ElementTriMorley`, `scikit-fem`).
 
-The project is aimed at the **out-of-plane plate-bending subproblem** around anchor groups and contact patches. It is useful for studying plate deformation, support reactions, lift-off, and local plate stresses under vertical force and bending moments.
+The repository targets the **out-of-plane bending subproblem** around anchor groups and support/contact zones. It is intended for transparent engineering studies (reaction split, lift-off patterns, sensitivity to support assumptions), not full anchor-code verification.
 
-## What this repository does
+## Scope of the model (what it solves)
 
-- Models a steel plate as a thin bending plate with `ElementTriMorley`
-- Supports **fixed anchors**, **linear vertical springs**, and **tension-only springs**
-- Transfers load from a **reference point** to **two parallel straight lines** to emulate a profile or double-flat-bar load introduction
-- Supports **compression-only Winkler foundation patches** with active-set contact iteration
-- Includes simple support-material models for:
-  - concrete
-  - timber
-  - stacked steel layers
-  - calibrated user-defined bedding stiffness
-- Provides:
-  - 2D plots
-  - 3D deformed-shape plots
-  - NPZ export for post-processing
-  - benchmark runners
-  - mesh-refinement helpers
-  - basic tests for support models, contact logic, and import hygiene
+`anchorplate` solves:
 
-## What this repository does **not** do
+- Transverse plate deflection `w(x, y)` and derived plate-bending stress indicators.
+- Vertical reaction transfer through:
+  - discrete supports (`fixed`, `spring`, `spring_tension_only`), and/or
+  - distributed `foundation_patch` support (Winkler-type bedding, optional compression-only active set).
+- Coupled vertical loading introduced through a reference-point style line-coupling (`Fz`, `Mx`, `My` mapped to two load lines).
+- Comparative benchmarks for support assumptions, materials (as equivalent stiffness), and mesh sensitivity.
 
-This is **not** a full anchor-design package.
+## Modeling boundaries / not covered
 
-Out of scope today:
+This section is explicit by design so readers do not infer capabilities that are not modeled.
 
-- full anchor-group design for `Fx`, `Fy`, and `Mz`
-- concrete cone, pull-out, pry-out, edge breakout, etc.
-- frictional tangential contact
-- nonlinear steel plasticity
-- detailed timber orthotropy/contact as a full advanced material model
-- full shell-shell or solid-solid contact mechanics for timber/steel assemblies
+- **No in-plane plate membrane model** (`u, v` in-plane fields are not solved; this is a bending-only plate submodel).
+- **No direct anchor shear verification** (`Fx`, `Fy` anchor shear checks are out of scope).
+- **No concrete failure verification** (no cone breakout, pryout, pull-out, side-face blowout, edge breakout checks).
+- **No full 3D interface contact mechanics** for steel/timber foundation pieces.
+  - Steel/timber/concrete foundation patches are implemented as **equivalent normal stiffness models** (`k_area`), not full 3D deformable bodies with tangential/frictional contact.
+- **No nonlinear steel plasticity** (elastic plate model).
+- **No frictional tangential contact law** (normal support only in `foundation_patch`).
 
-`Fx` and `Fy` can be projected into equivalent plate moments using a stand-off `e_out`, but that is still only the **plate-bending subproblem**, not full anchor verification.
+## Support models available
 
-## Core modeling assumptions
+### 1) `fixed`
 
-### Plate model
+- Nodal `w = 0` at anchor coordinates.
+- Useful as a rigid-boundary reference case.
 
-The steel plate is modeled as a **Kirchhoff-Love plate** in bending. The main unknown is transverse deflection `w`.
+### 2) `spring`
 
-Units used throughout the repo:
+- Linear bidirectional vertical spring at each anchor: `R = kz * w`.
+- Always active.
+- Useful as a linearized discrete-anchor model.
 
-- length: `mm`
-- force: `N`
-- stress: `MPa = N/mm²`
+### 3) `spring_tension_only`
 
-### Support models
+- Unilateral spring model:
+  - active in tension (`w > +tol` under solver sign convention),
+  - inactive in compression (`w < -tol`),
+  - hysteresis in `[-tol, +tol]` to reduce chattering.
+- Useful when uplift realism is needed and anchors should not provide fictitious compression resistance.
 
-The code currently supports three main support idealizations:
+### 4) `foundation_patch` (equivalent distributed support)
 
-1. **Fixed discrete supports**
-   - nodal `w = 0` at anchor positions
+- Patch-wise bedding stiffness `k_area [N/mm³]` converted to nodal stiffness using tributary areas.
+- Optional compression-only contact active set (`w > tol` active, otherwise lift-off/inactive).
+- Can coexist with discrete anchors (hybrid model).
 
-2. **Spring anchors**
-   - nodal vertical springs with stiffness `kz [N/mm]`
-   - reaction extracted as `R = kz * w`
+## What “equivalent stiffness benchmark” means here
 
-3. **Foundation patches**
-   - distributed bedding stiffness `k_area [N/mm³]`
-   - optional **compression-only** behavior using active-set iteration
-   - useful for grout, concrete bearing, timber compression-perpendicular simplifications, or calibrated interfaces
+The material-related benchmarks are **not** constitutive material validation in a full 3D sense.
 
-### Load introduction
+They compare **equivalent support stiffness inputs** (`k_area`) derived from simple engineering models, e.g. concrete, timber, or steel-layer surrogates, and quantify how those assumptions change:
 
-The repo includes a **reference-point style coupled load** that distributes `Fz`, `Mx`, and `My` to **two straight lines**. This is intended as a practical approximation of a profile introducing load into the plate, similar in spirit to an RP plus coupling in a 3D FE model.
+- contact active area,
+- reaction split (anchors vs foundation),
+- `w_max` and stress indicators.
 
-### Bedding / support-material models
+Interpretation: this is a **model-assumption sensitivity benchmark**, not a direct proof of real material failure resistance.
 
-The support module currently includes simple but traceable helper laws:
+## What “anchor-dominant benchmark” means here
 
-- `concrete_simple`: `k = E_cm / h_eff`
-- `concrete_advanced`: geometry-corrected concrete helper
-- `timber_simple`: `k = spread_factor * E_90 / h_eff`
-- `steel_layers_simple`: `1 / k = Σ(t_i / E_i)`
-- `calibrated`: direct user-defined `k`
+`demo_anchor_dominant.py` separates two regimes:
 
-These are engineering approximations, not universal constitutive truth. The repo keeps the chosen model name, parameters, and notes so benchmark outputs remain traceable.
+- **anchor-dominant**: load path primarily through discrete anchors (no patch),
+- **hybrid with small/soft patch**: patch present but intentionally weak/limited.
+
+Purpose: keep comparisons physically legible by showing when conclusions come from anchor behavior versus distributed support contribution.
 
 ## Repository layout
 
 ```text
 src/anchorplate/
-  __init__.py
-  benchmark.py            PROFIS-like plate benchmark
-  benchmark_material.py   bedding-material sensitivity benchmark
-  benchmark_matrix.py     consolidated support-model matrix benchmark
-  loading.py              RP-to-line load transfer helpers
-  mesh.py                 mesh generation and refinement helpers
-  model.py                dataclasses and analysis options
-  plotting.py             2D/3D plots and NPZ export
-  postprocess.py          moment/stress recovery helpers
-  solver.py               FE assembly, contact iteration, reactions
-  support.py              support-material and bedding helpers
+  model.py                      core dataclasses and analysis options
+  solver.py                     FE assembly, support/contact active-set logic, reactions
+  support.py                    equivalent support-material helpers (k_area)
+  loading.py                    reference-point to line-load transfer
+  mesh.py                       mesh generation/refinement helpers
+  postprocess.py                moment/stress recovery helpers
+  plotting.py                   2D/3D plots and NPZ export
+  benchmark.py                  fixed/spring benchmark core
+  benchmark_material.py         equivalent-stiffness material benchmark
+  benchmark_matrix.py           support-model matrix benchmark
+  benchmark_anchor_dominant.py  anchor-dominant benchmark
 
 examples/
   demo_single_case.py
@@ -106,232 +99,129 @@ examples/
   demo_foundation_patch_3d.py
   demo_benchmark_material.py
   demo_benchmark_matrix.py
+  demo_anchor_dominant.py
   demo_mesh_convergence.py
   verify_benchmark_csv.py
 
-examples/README.md        short example index
-
 docs/
-  notes.md
-  bugfix_spring_reactions.md
   contact_liftoff_guide.md
-  timber_advanced_roadmap.md
-
-tests/
-  test_benchmark_material.py
-  test_equivalent_line_load.py
-  test_foundation_contact.py
-  test_import_hygiene.py
-  test_spring_reactions.py
-  test_support_models.py
+  spring_tension_only.md
+  anchor_dominant_note.md
+  hybrid_anchor_support_modes.md
+  notes.md
+  ...
 ```
 
-## Installation
+## Benchmark examples available
 
-Python requirement from `pyproject.toml`:
+- `demo_benchmark.py`: baseline sweep (fixed supports).
+- `demo_benchmark_springs.py`: same benchmark family with spring anchors.
+- `demo_benchmark_material.py`: equivalent-stiffness material sensitivity for foundation patches (`spring` and `spring_tension_only` variants).
+- `demo_benchmark_matrix.py`: consolidated matrix across `fixed`, `spring_anchors`, and `foundation_patch_*` models for both discrete support modes.
+- `demo_anchor_dominant.py`: focused benchmark for anchor-dominant vs small/soft-patch behavior.
+- `demo_mesh_convergence.py`: coarse/medium/fine convergence study (with/without refinement boxes).
 
-- Python `>= 3.11`
+## Mini interpretation guide (selected scripts)
 
-Install in editable mode:
+### `examples/demo_mesh_convergence.py`
+
+- Use to justify a practical `target_h_mm`.
+- Prioritize convergence of global metrics (`w_max`, `reaction_sum_kN`) over local maxima alone.
+- Main outputs in `outputs/demo_mesh_convergence/`:
+  - `mesh_convergence_summary.csv`
+  - `mesh_convergence_summary.md`
+  - `mesh_convergence_overview.png`
+  - per-level mesh plots under mode subfolders.
+
+### `examples/demo_benchmark_material.py`
+
+- Interprets support materials as **equivalent `k_area` models**.
+- Compare `support_type` (`spring` vs `spring_tension_only`) and reaction split columns.
+- Outputs in:
+  - `outputs/material_benchmark/spring/...`
+  - `outputs/material_benchmark/spring_tension_only/...`
+  with per-support-type summary files (`material_benchmark_summary.csv/.md`) and overview plots.
+
+### `examples/demo_benchmark_matrix.py`
+
+- Use for side-by-side support-model comparison under identical load cases.
+- Do not mix discrete-only and hybrid conclusions without checking `model_type` and `support_type` columns.
+- Outputs in:
+  - `outputs/benchmark_matrix/spring/...`
+  - `outputs/benchmark_matrix/spring_tension_only/...`
+  each with `benchmark_matrix_summary.csv/.md`, `benchmark_matrix_overview.png`, `benchmark_matrix_note.md`.
+
+### `examples/demo_anchor_dominant.py`
+
+- Read `foundation_share_pct` to quantify when the patch contribution is secondary vs relevant.
+- Useful regression check for discrete-anchor behavior under `Fz+Mx` and `Fz+Mx+My`.
+- Outputs in `outputs/anchor_dominant/`:
+  - `anchor_dominant_summary.csv`
+  - `anchor_dominant_summary.md`
+  - `anchor_dominant_overview.png`
+  - `anchor_dominant_note.md`
+  - per-case folders with 2D/3D plots and NPZ.
+
+### `examples/demo_foundation_patch_3d.py`
+
+- Reference contact/lift-off inspection case.
+- Validate mask logic from NPZ:
+  - `active_foundation_mask`
+  - `inactive_foundation_mask`
+  - `in_patch_mask`
+- Outputs in `outputs/demo_foundation_patch_3d/`:
+  - `mesh.png`
+  - `demo_foundation_patch_3d.png`
+  - `demo_foundation_patch_3d_3d.png`
+  - `demo_foundation_patch_3d_result.npz`
+  - `contact_summary.txt`
+
+See `docs/contact_liftoff_guide.md` for detailed sign convention and mask interpretation.
+
+## Main outputs
+
+Depending on script/configuration, generated artifacts include:
+
+- summary CSV/Markdown tables,
+- overview plots,
+- per-case 2D/3D result plots,
+- NPZ bundles for post-processing,
+- contact/lift-off metrics and active-set iteration history.
+
+Outputs are written under `outputs/...` and treated as generated artifacts.
+
+## Install and run
+
+Requirements (from `pyproject.toml`): Python `>=3.11`.
 
 ```bash
 pip install -e .
 ```
 
-Main dependencies:
-
-- `numpy`
-- `scipy`
-- `matplotlib`
-- `scikit-fem`
-- `pandas`
-
-## Import hygiene and optional FE dependency
-
-The package is organized so lightweight submodules can be imported without pulling the full FE stack immediately.
-
-Lightweight imports:
-
-```python
-import anchorplate.model
-import anchorplate.support
-```
-
-FE-heavy functionality remains in explicit submodules or lazy exports:
-
-```python
-from anchorplate.solver import solve_anchor_plate
-from anchorplate.plotting import plot_result_3d
-from anchorplate.benchmark import run_profis_like_benchmark
-```
-
-If `scikit-fem` is missing, FE features will fail with a clear error, but support-model utilities should remain usable.
-
-## Quick start
-
-Run the smallest end-to-end example first:
+Suggested first run order:
 
 ```bash
 python examples/demo_single_case.py
-```
-
-Then try the main fixed-support benchmark:
-
-```bash
 python examples/demo_benchmark.py
-```
-
-Then compare against spring anchors:
-
-```bash
 python examples/demo_benchmark_springs.py
-```
-
-Then inspect lift-off/contact in 3D:
-
-```bash
 python examples/demo_foundation_patch_3d.py
-```
-
-Then material sensitivity and consolidated benchmark matrix:
-
-```bash
 python examples/demo_benchmark_material.py
 python examples/demo_benchmark_matrix.py
-```
-
-Finally, run a practical mesh-convergence check:
-
-```bash
+python examples/demo_anchor_dominant.py
 python examples/demo_mesh_convergence.py --mode both
 ```
 
-Generated results are written to `outputs/...` and are intended as disposable artifacts.
-
-## Example guide
-
-### `demo_single_case.py`
-Small sanity check for:
-
-- plate setup
-- mesh generation
-- coupled line load transfer
-- result plotting
-- NPZ export
-
-### `demo_benchmark.py`
-Runs a PROFIS-like sweep on a plate with **fixed supports**.
-
-Typical outputs:
-
-- per-case result plots
-- `benchmark_summary.csv`
-- `benchmark_summary.md`
-- `benchmark_overview.png`
-
-### `demo_benchmark_springs.py`
-Same idea as above, but using **spring-supported anchors**.
-Useful for checking reaction extraction and the effect of finite support stiffness.
-
-### `demo_foundation_patch.py`
-Mixed-bedding contact example with distributed support patches.
-
-### `demo_foundation_patch_3d.py`
-Best entry point for checking:
-
-- active vs inactive contact zones
-- lift-off
-- deformed shape relative to `z = 0`
-- exported NPZ masks (`active`, `inactive`, `in_patch`)
-
-### `demo_benchmark_material.py`
-Material sensitivity benchmark for foundation bedding stiffness.
-Currently compares simplified support-material models such as grout/concrete, steel, and timber.
-
-### `demo_benchmark_matrix.py`
-Consolidated matrix across different support assumptions, including:
-
-- fixed anchors
-- spring anchors
-- spring anchors + full foundation patch with different materials
-
-This is the best script for a fast cross-model comparison under the same load cases.
-
-### `demo_mesh_convergence.py`
-Coarse/medium/fine convergence study for a representative bending case.
-Useful for checking whether global outputs such as `w_max`, reaction sums, and plate stress indicators stabilize with mesh refinement.
-
-### `verify_benchmark_csv.py`
-Post-processes benchmark CSV files to add equilibrium-check columns.
-Useful as a quick audit step after a benchmark run.
-
-## Typical outputs
-
-Depending on the example, the repo can generate:
-
-- 2D result plots
-- 3D deformed-shape plots
-- mesh plots
-- CSV summaries
-- Markdown summaries
-- NPZ result bundles for custom post-processing
-
-Foundation/contact examples also export or reconstruct:
-
-- active foundation mask
-- inactive foundation mask
-- in-patch mask
-- contact-iteration history
-
-## Testing
-
-Run the test suite with:
+## Tests
 
 ```bash
 pytest -q
 ```
 
-Note that FE-heavy tests require the FE dependency stack installed.
+## Related docs
 
-## Known limitations and current maturity
-
-This repository is already useful for:
-
-- plate-level comparison of support assumptions
-- studying lift-off vs contact area
-- checking reaction patterns for fixed vs spring supports
-- comparing simplified concrete/steel/timber bedding assumptions
-- building reproducible benchmark plots and CSV summaries
-
-It should still be treated as a **prototype / engineering sandbox**, not as a production-certified verification tool.
-
-In particular:
-
-- local stress peaks near nodal supports or concentrated load-introduction zones are mesh-sensitive
-- simplified bedding laws for concrete/timber/steel are engineering surrogates
-- timber is not yet modeled as a full orthotropic contact body
-- foundation patches represent distributed normal support, not full interface mechanics
-
-## Documentation notes
-
-Useful supporting docs shipped with the repo:
-
-- `docs/bugfix_spring_reactions.md`
-- `docs/spring_tension_only.md`
+- `examples/README.md` (compact runnable index)
 - `docs/contact_liftoff_guide.md`
-- `docs/timber_advanced_roadmap.md`
+- `docs/spring_tension_only.md`
+- `docs/hybrid_anchor_support_modes.md`
+- `docs/anchor_dominant_note.md`
 - `docs/notes.md`
-
-## Practical recommendation
-
-Recommended order for someone new to the repo:
-
-1. `demo_single_case.py`
-2. `demo_benchmark.py`
-3. `demo_benchmark_springs.py`
-4. `demo_foundation_patch_3d.py`
-5. `demo_benchmark_material.py`
-6. `demo_benchmark_matrix.py`
-7. `demo_mesh_convergence.py`
-
-That sequence tends to surface installation issues, reaction issues, contact interpretation, material sensitivity, and mesh sensitivity in a sensible order.
