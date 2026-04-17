@@ -13,6 +13,7 @@ This folder contains runnable scripts for the main analysis modes in the project
 | `demo_foundation_patch_3d.py` | More explicit contact/lift-off demo with 3D visualisation and text summary | mesh plot, 2D/3D result plots, NPZ export, `contact_summary.txt` |
 | `demo_benchmark_material.py` | Material sensitivity benchmark for foundation bedding stiffness | `material_benchmark_summary.csv`, Markdown summary, overview plots |
 | `verify_benchmark_csv.py` | Post-processes the fixed benchmark summary to add equilibrium error checks | `benchmark_verification.csv` |
+| `demo_mesh_convergence.py` | Coarse/medium/fine convergence study for a representative Fz+Mx case, with optional refinement boxes | `mesh_convergence_summary.csv`, Markdown summary, overview plot |
 
 ## Recommended order
 
@@ -21,6 +22,7 @@ This folder contains runnable scripts for the main analysis modes in the project
 3. `python examples/demo_benchmark_springs.py`
 4. `python examples/demo_foundation_patch_3d.py`
 5. `python examples/demo_benchmark_material.py`
+6. `python examples/demo_mesh_convergence.py --mode both`
 
 ## What each example is good for
 
@@ -49,3 +51,7 @@ Use this after `demo_benchmark.py` to add a quick equilibrium audit layer to the
 
 All examples write generated files into `outputs/...`.
 That directory is ignored by Git and should be treated as generated content.
+
+
+### `demo_mesh_convergence.py`
+Use this to run a reproducible coarse/medium/fine mesh convergence study and justify a practical default `target_h_mm` using global metrics (`w_max`, reaction sum) instead of only stress peaks.
