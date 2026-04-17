@@ -168,6 +168,18 @@ Post-processing helper that reads the benchmark CSV and adds equilibrium error c
 
 Useful as a quick audit step after a benchmark run.
 
+### `demo_benchmark_matrix.py`
+Consolidated benchmark matrix across support-model assumptions (`fixed`, `spring_anchors`,
+`foundation_patch_*`) evaluated on the same compact load-case set.
+
+Writes matrix CSV/Markdown summaries plus an overview plot and a technical note.
+
+### `demo_mesh_convergence.py`
+Coarse/medium/fine mesh-convergence study for a representative `Fz + Mx` case, with
+optional refinement boxes (`--mode with-boxes`, `--mode without-boxes`, or `--mode both`).
+
+Writes convergence CSV/Markdown summaries and an overview plot.
+
 ## Repository layout
 
 ```text
@@ -191,6 +203,8 @@ examples/
   demo_foundation_patch.py
   demo_foundation_patch_3d.py
   demo_benchmark_material.py
+  demo_benchmark_matrix.py
+  demo_mesh_convergence.py
   verify_benchmark_csv.py
 
 docs/
