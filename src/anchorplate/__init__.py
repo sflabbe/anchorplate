@@ -15,12 +15,18 @@ from .model import (
     SteelPlate,
 )
 from .support import (
+    SupportMaterialModelResult,
     bedding_calibrated,
     bedding_concrete_advanced,
     bedding_concrete_simple,
     bedding_nodal_from_area,
     bedding_steel_layers,
     bedding_timber_simple,
+    support_material_calibrated,
+    support_material_concrete_advanced,
+    support_material_concrete_simple,
+    support_material_steel_layers_simple,
+    support_material_timber_simple,
 )
 
 # Names that require optional FE/plotting dependencies.
@@ -43,12 +49,18 @@ __all__ = [
     "PointSupport",
     "SteelLayer",
     "SteelPlate",
+    "SupportMaterialModelResult",
     "bedding_calibrated",
     "bedding_concrete_advanced",
     "bedding_concrete_simple",
     "bedding_nodal_from_area",
     "bedding_steel_layers",
     "bedding_timber_simple",
+    "support_material_calibrated",
+    "support_material_concrete_advanced",
+    "support_material_concrete_simple",
+    "support_material_steel_layers_simple",
+    "support_material_timber_simple",
     *_LAZY_EXPORTS.keys(),
 ]
 

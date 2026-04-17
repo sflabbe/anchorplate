@@ -28,10 +28,16 @@ from pathlib import Path
 
 from anchorplate.benchmark_material import (
     default_load_cases,
-    default_materials,
+    material_spec_from_model_result,
     run_material_benchmark,
 )
 from anchorplate.model import AnalysisOptions, PointSupport, SteelPlate
+from anchorplate.support import (
+    support_material_concrete_simple,
+    support_material_steel_layers_simple,
+    support_material_timber_simple,
+)
+from anchorplate.model import SteelLayer
 
 
 def main() -> None:
@@ -54,7 +60,28 @@ def main() -> None:
         z_plot_scale=50.0,
     )
 
-    materials  = default_materials()
+    materials = [
+        material_spec_from_model_result(
+            name="Grout C25/30 h=50 mm",
+            label="grout",
+            model=support_material_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0),
+            description="E_cm=32000 MPa, h_eff=50 mm",
+        ),
+        material_spec_from_model_result(
+            name="Steel S235 t=10 mm",
+            label="steel",
+            model=support_material_steel_layers_simple(
+                [SteelLayer(thickness_mm=10.0, youngs_modulus_mpa=210_000.0)]
+            ),
+            description="E=210000 MPa, t=10 mm",
+        ),
+        material_spec_from_model_result(
+            name="Timber GL24h h=50 mm",
+            label="timber",
+            model=support_material_timber_simple(e90_mpa=390.0, h_eff_mm=50.0),
+            description="E_90=390 MPa, h_eff=50 mm",
+        ),
+    ]
     load_cases = default_load_cases()
 
     print("Running material benchmark …")

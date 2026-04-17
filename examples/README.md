@@ -43,6 +43,7 @@ Use this when you specifically want to inspect lift-off and active contact zones
 
 ### `demo_benchmark_material.py`
 Use this when you want to compare how foundation stiffness changes contact area, deflection, and utilisation across materials.
+The benchmark summary now records the support model metadata (`model_name`, parameters, notes) for traceability.
 
 ### `verify_benchmark_csv.py`
 Use this after `demo_benchmark.py` to add a quick equilibrium audit layer to the benchmark summary.
