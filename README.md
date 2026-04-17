@@ -197,6 +197,30 @@ Depending on script/configuration, generated artifacts include:
 
 Outputs are written under `outputs/...` and treated as generated artifacts.
 
+
+## Declarative TOML input (single case + studies)
+
+You can now run analyses without editing Python scripts by using TOML input files and the new runner:
+
+```bash
+python -m anchorplate.run_case examples/toml/simple_case.toml
+python -m anchorplate.run_case examples/toml/parametric_study.toml
+```
+
+Supported top-level sections include:
+
+- `[plate]`
+- `[analysis_options]`
+- `[[supports]]`
+- `[[point_loads]]`
+- `[[coupled_line_loads]]`
+- `[[foundation_patches]]`
+- `[[refinement_boxes]]`
+- optional `[support_material_model]`
+- optional `[[sweeps]]` for parametric studies
+
+See `docs/input_toml.md` for schema details and `examples/toml/*.toml` for minimal templates.
+
 ## Install and run
 
 Requirements (from `pyproject.toml`): Python `>=3.11`.

@@ -1,0 +1,66 @@
+mode = "single_case"
+
+[case]
+name = "foundation_patch_case"
+
+[plate]
+length_mm = 300.0
+width_mm = 300.0
+thickness_mm = 15.0
+
+[analysis_options]
+target_h_mm = 8.0
+output_dir = "outputs/toml_foundation"
+save_plots = true
+save_3d_plots = true
+save_result_npz = true
+
+[support_material_model]
+model = "concrete_simple"
+e_cm_mpa = 32000.0
+h_eff_mm = 250.0
+
+[[supports]]
+x_mm = 40.0
+y_mm = 40.0
+kind = "spring_tension_only"
+kz_n_per_mm = 15000.0
+label = "S1"
+
+[[supports]]
+x_mm = 260.0
+y_mm = 40.0
+kind = "spring_tension_only"
+kz_n_per_mm = 15000.0
+label = "S2"
+
+[[supports]]
+x_mm = 40.0
+y_mm = 260.0
+kind = "spring_tension_only"
+kz_n_per_mm = 15000.0
+label = "S3"
+
+[[supports]]
+x_mm = 260.0
+y_mm = 260.0
+kind = "spring_tension_only"
+kz_n_per_mm = 15000.0
+label = "S4"
+
+[[coupled_line_loads]]
+ref_x_mm = 150.0
+ref_y_mm = 150.0
+force_n = 45000.0
+mx_nmm = 1500000.0
+line_spacing_mm = 150.0
+line_length_mm = 100.0
+label = "RP"
+
+[[foundation_patches]]
+x_min_mm = 90.0
+x_max_mm = 210.0
+y_min_mm = 90.0
+y_max_mm = 210.0
+compression_only = true
+label = "C30_block"

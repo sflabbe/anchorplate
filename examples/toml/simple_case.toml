@@ -1,0 +1,48 @@
+mode = "single_case"
+
+[case]
+name = "simple_case"
+
+[plate]
+length_mm = 300.0
+width_mm = 300.0
+thickness_mm = 15.0
+
+[analysis_options]
+target_h_mm = 8.0
+output_dir = "outputs/toml_simple"
+save_plots = true
+save_3d_plots = false
+save_result_npz = true
+
+[[supports]]
+x_mm = 30.0
+y_mm = 30.0
+kind = "fixed"
+label = "A1"
+
+[[supports]]
+x_mm = 270.0
+y_mm = 30.0
+kind = "fixed"
+label = "A2"
+
+[[supports]]
+x_mm = 30.0
+y_mm = 270.0
+kind = "fixed"
+label = "A3"
+
+[[supports]]
+x_mm = 270.0
+y_mm = 270.0
+kind = "fixed"
+label = "A4"
+
+[[coupled_line_loads]]
+ref_x_mm = 150.0
+ref_y_mm = 150.0
+force_n = 50000.0
+line_spacing_mm = 150.0
+line_length_mm = 100.0
+label = "RP"
