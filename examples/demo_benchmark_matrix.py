@@ -42,13 +42,30 @@ def main() -> None:
         save_3d_plots=False,
     )
 
-    rows = run_support_model_matrix_benchmark(
-        plate=plate,
-        options=options,
-        outdir=outdir,
-    )
+    rows = []
+    for support_kind in ("spring", "spring_tension_only"):
+        rows.extend(
+            run_support_model_matrix_benchmark(
+                plate=plate,
+                options=options,
+                outdir=outdir / support_kind,
+                hybrid_support_kind=support_kind,
+            )
+        )
 
     print(f"Casos resueltos: {len(rows)}")
+    print(
+        f"\n{'Modelo':<45} {'LC':<20} {'Anchors':>10} {'ΣR_anchor [kN]':>14} {'ΣR_found [kN]':>13}"
+    )
+    print("-" * 115)
+    for r in rows:
+        if "foundation_patch" not in r.model_name:
+            continue
+        print(
+            f"{r.model_name:<45} {r.load_case:<20} "
+            f"{f'{r.anchor_active_count}/{r.anchor_inactive_count}':>10} "
+            f"{r.sum_spring_reactions_kN:>14.2f} {r.sum_foundation_reactions_kN:>13.2f}"
+        )
     print(f"Resultados en: {outdir.resolve()}")
 
 
