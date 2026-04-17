@@ -1,23 +1,25 @@
 # Examples
 
-This folder contains runnable scripts for the main analysis modes in the project.
+Runnable scripts for the main analysis/benchmark modes.
 
-## Overview
+> Scope note: detailed modeling boundaries and interpretation guidance now live in the repository root `README.md`. This file stays intentionally compact.
 
-| Script | Purpose | Typical output |
+## Script index
+
+| Script | Main purpose | Main output root |
 |---|---|---|
-| `demo_single_case.py` | Smallest end-to-end sanity check for a single plate/load case with 4 fixed supports | mesh plot, 2D result plot, 3D plot, NPZ file |
-| `demo_benchmark.py` | Fixed-support benchmark sweep across multiple load cases | per-case plots, `benchmark_summary.csv`, `benchmark_summary.md`, overview plot |
-| `demo_benchmark_springs.py` | Same benchmark sweep but with spring supports | per-case plots and benchmark summaries for the spring-supported variant |
-| `demo_foundation_patch.py` | Compression-only foundation patch example with concrete and timber zones | mesh plot, result plots, NPZ export, console contact history |
-| `demo_foundation_patch_3d.py` | More explicit contact/lift-off demo with 3D visualisation and text summary | mesh plot, 2D/3D result plots, NPZ export, `contact_summary.txt` |
-| `demo_benchmark_material.py` | Material sensitivity benchmark for foundation bedding stiffness | `material_benchmark_summary.csv`, Markdown summary, overview plots |
-| `demo_benchmark_matrix.py` | Consolidated support-model matrix (`fixed`, `spring_anchors`, `foundation_patch_*`) on shared load cases | `benchmark_matrix_summary.csv`, Markdown summary, overview plot, technical note |
-| `demo_anchor_dominant.py` | Anchor-dominant benchmark to isolate discrete anchor behaviour vs a small/soft foundation patch | `anchor_dominant_summary.csv`, Markdown summary, overview plot, per-case 2D/3D plots, technical note |
-| `verify_benchmark_csv.py` | Post-processes the fixed benchmark summary to add equilibrium error checks | `benchmark_verification.csv` |
-| `demo_mesh_convergence.py` | Coarse/medium/fine convergence study for a representative Fz+Mx case, with optional refinement boxes | `mesh_convergence_summary.csv`, Markdown summary, overview plot |
+| `demo_single_case.py` | Minimal end-to-end sanity run | `outputs/demo_single_case/` |
+| `demo_benchmark.py` | Fixed-support benchmark sweep | `outputs/demo_benchmark/` |
+| `demo_benchmark_springs.py` | Spring-support benchmark sweep | `outputs/demo_benchmark_springs/` |
+| `demo_foundation_patch.py` | Basic compression-only foundation patch case | `outputs/demo_foundation_patch/` |
+| `demo_foundation_patch_3d.py` | Contact/lift-off visualization + NPZ masks | `outputs/demo_foundation_patch_3d/` |
+| `demo_benchmark_material.py` | Equivalent-stiffness material benchmark (`spring` and `spring_tension_only`) | `outputs/material_benchmark/` |
+| `demo_benchmark_matrix.py` | Consolidated support-model matrix benchmark | `outputs/benchmark_matrix/` |
+| `demo_anchor_dominant.py` | Anchor-dominant vs small/soft patch comparison | `outputs/anchor_dominant/` |
+| `demo_mesh_convergence.py` | Coarse/medium/fine mesh convergence study | `outputs/demo_mesh_convergence/` |
+| `verify_benchmark_csv.py` | Equilibrium audit post-process | writes verification CSV in selected benchmark folder |
 
-## Recommended order
+## Recommended run order
 
 1. `python examples/demo_single_case.py`
 2. `python examples/demo_benchmark.py`
@@ -28,43 +30,12 @@ This folder contains runnable scripts for the main analysis modes in the project
 7. `python examples/demo_anchor_dominant.py`
 8. `python examples/demo_mesh_convergence.py --mode both`
 
-## What each example is good for
+## Pointers
 
-### `demo_single_case.py`
-Use this first to check that the installation works and that plots/NPZ export are functional.
+- Contact/lift-off sign convention and mask interpretation: `docs/contact_liftoff_guide.md`.
+- Tension-only anchor behavior: `docs/spring_tension_only.md`.
+- Benchmark positioning (hybrid modes, anchor-dominant framing):
+  - `docs/hybrid_anchor_support_modes.md`
+  - `docs/anchor_dominant_note.md`
 
-### `demo_benchmark.py`
-Use this when you want a reproducible set of fixed-support load cases and a compact summary table.
-
-### `demo_benchmark_springs.py`
-Use this when you want to compare the same benchmark against vertical spring supports.
-
-### `demo_foundation_patch.py`
-Use this when you want a simple mixed-bedding contact example without extra reporting overhead.
-
-### `demo_foundation_patch_3d.py`
-Use this when you specifically want to inspect lift-off and active contact zones in a more visual way.
-
-### `demo_benchmark_material.py`
-Use this when you want to compare how foundation stiffness changes contact area, deflection, and utilisation across materials.
-The benchmark summary now records the support model metadata (`model_name`, parameters, notes) for traceability.
-
-### `verify_benchmark_csv.py`
-Use this after `demo_benchmark.py` to add a quick equilibrium audit layer to the benchmark summary.
-
-### `demo_benchmark_matrix.py`
-Use this when you need an apples-to-apples matrix across support assumptions (fixed/spring vs foundation patch materials) under identical load cases.
-The output keeps `model_type` explicit so discrete and hybrid contact models are not conflated.
-
-### `demo_anchor_dominant.py`
-Use this when you want a focused benchmark where the anchor reactions remain the primary load path.
-It includes two load combinations (`Fz+Mx` and `Fz+Mx+My`) and reports per-anchor reactions, total anchor/foundation split, and active contact percentage for the soft/small patch variant.
-
-## Output handling
-
-All examples write generated files into `outputs/...`.
-That directory is ignored by Git and should be treated as generated content.
-
-
-### `demo_mesh_convergence.py`
-Use this to run a reproducible coarse/medium/fine mesh convergence study and justify a practical default `target_h_mm` using global metrics (`w_max`, reaction sum) instead of only stress peaks.
+All files under `outputs/...` are generated artifacts.
