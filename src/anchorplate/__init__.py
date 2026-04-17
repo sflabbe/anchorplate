@@ -41,6 +41,7 @@ _LAZY_EXPORTS = {
     "plot_result_3d": ("anchorplate.plotting", "plot_result_3d"),
     "run_profis_like_benchmark": ("anchorplate.benchmark", "run_profis_like_benchmark"),
     "run_support_model_matrix_benchmark": ("anchorplate.benchmark_matrix", "run_support_model_matrix_benchmark"),
+    "run_anchor_dominant_benchmark": ("anchorplate.benchmark_anchor_dominant", "run_anchor_dominant_benchmark"),
 }
 
 __all__ = [

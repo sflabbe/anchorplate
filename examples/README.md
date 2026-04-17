@@ -13,6 +13,7 @@ This folder contains runnable scripts for the main analysis modes in the project
 | `demo_foundation_patch_3d.py` | More explicit contact/lift-off demo with 3D visualisation and text summary | mesh plot, 2D/3D result plots, NPZ export, `contact_summary.txt` |
 | `demo_benchmark_material.py` | Material sensitivity benchmark for foundation bedding stiffness | `material_benchmark_summary.csv`, Markdown summary, overview plots |
 | `demo_benchmark_matrix.py` | Consolidated support-model matrix (`fixed`, `spring_anchors`, `foundation_patch_*`) on shared load cases | `benchmark_matrix_summary.csv`, Markdown summary, overview plot, technical note |
+| `demo_anchor_dominant.py` | Anchor-dominant benchmark to isolate discrete anchor behaviour vs a small/soft foundation patch | `anchor_dominant_summary.csv`, Markdown summary, overview plot, per-case 2D/3D plots, technical note |
 | `verify_benchmark_csv.py` | Post-processes the fixed benchmark summary to add equilibrium error checks | `benchmark_verification.csv` |
 | `demo_mesh_convergence.py` | Coarse/medium/fine convergence study for a representative Fz+Mx case, with optional refinement boxes | `mesh_convergence_summary.csv`, Markdown summary, overview plot |
 
@@ -24,7 +25,8 @@ This folder contains runnable scripts for the main analysis modes in the project
 4. `python examples/demo_foundation_patch_3d.py`
 5. `python examples/demo_benchmark_material.py`
 6. `python examples/demo_benchmark_matrix.py`
-7. `python examples/demo_mesh_convergence.py --mode both`
+7. `python examples/demo_anchor_dominant.py`
+8. `python examples/demo_mesh_convergence.py --mode both`
 
 ## What each example is good for
 
@@ -53,6 +55,10 @@ Use this after `demo_benchmark.py` to add a quick equilibrium audit layer to the
 ### `demo_benchmark_matrix.py`
 Use this when you need an apples-to-apples matrix across support assumptions (fixed/spring vs foundation patch materials) under identical load cases.
 The output keeps `model_type` explicit so discrete and hybrid contact models are not conflated.
+
+### `demo_anchor_dominant.py`
+Use this when you want a focused benchmark where the anchor reactions remain the primary load path.
+It includes two load combinations (`Fz+Mx` and `Fz+Mx+My`) and reports per-anchor reactions, total anchor/foundation split, and active contact percentage for the soft/small patch variant.
 
 ## Output handling
 
