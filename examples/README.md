@@ -12,6 +12,7 @@ This folder contains runnable scripts for the main analysis modes in the project
 | `demo_foundation_patch.py` | Compression-only foundation patch example with concrete and timber zones | mesh plot, result plots, NPZ export, console contact history |
 | `demo_foundation_patch_3d.py` | More explicit contact/lift-off demo with 3D visualisation and text summary | mesh plot, 2D/3D result plots, NPZ export, `contact_summary.txt` |
 | `demo_benchmark_material.py` | Material sensitivity benchmark for foundation bedding stiffness | `material_benchmark_summary.csv`, Markdown summary, overview plots |
+| `demo_benchmark_matrix.py` | Consolidated support-model matrix (`fixed`, `spring_anchors`, `foundation_patch_*`) on shared load cases | `benchmark_matrix_summary.csv`, Markdown summary, overview plot, technical note |
 | `verify_benchmark_csv.py` | Post-processes the fixed benchmark summary to add equilibrium error checks | `benchmark_verification.csv` |
 | `demo_mesh_convergence.py` | Coarse/medium/fine convergence study for a representative Fz+Mx case, with optional refinement boxes | `mesh_convergence_summary.csv`, Markdown summary, overview plot |
 
@@ -22,7 +23,8 @@ This folder contains runnable scripts for the main analysis modes in the project
 3. `python examples/demo_benchmark_springs.py`
 4. `python examples/demo_foundation_patch_3d.py`
 5. `python examples/demo_benchmark_material.py`
-6. `python examples/demo_mesh_convergence.py --mode both`
+6. `python examples/demo_benchmark_matrix.py`
+7. `python examples/demo_mesh_convergence.py --mode both`
 
 ## What each example is good for
 
@@ -47,6 +49,10 @@ The benchmark summary now records the support model metadata (`model_name`, para
 
 ### `verify_benchmark_csv.py`
 Use this after `demo_benchmark.py` to add a quick equilibrium audit layer to the benchmark summary.
+
+### `demo_benchmark_matrix.py`
+Use this when you need an apples-to-apples matrix across support assumptions (fixed/spring vs foundation patch materials) under identical load cases.
+The output keeps `model_type` explicit so discrete and hybrid contact models are not conflated.
 
 ## Output handling
 

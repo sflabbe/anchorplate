@@ -36,6 +36,7 @@ _LAZY_EXPORTS = {
     "export_result_npz": ("anchorplate.plotting", "export_result_npz"),
     "plot_result_3d": ("anchorplate.plotting", "plot_result_3d"),
     "run_profis_like_benchmark": ("anchorplate.benchmark", "run_profis_like_benchmark"),
+    "run_support_model_matrix_benchmark": ("anchorplate.benchmark_matrix", "run_support_model_matrix_benchmark"),
 }
 
 __all__ = [
