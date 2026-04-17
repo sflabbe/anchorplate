@@ -108,6 +108,9 @@ def export_result_npz(result, outpath: Path) -> tuple[Path, dict]:
     sigma_vm_mpa            : von Mises stress (nodal average from elements)
     support_vertex_ids      : mesh vertex indices of supports
     support_reactions_n     : support reactions [N] (R = kz·w for springs, residual for fixed)
+    support_active_mask     : uint8 per support — 1 if spring is active (always 1 for fixed/linear spring)
+    support_kinds           : support kind string per support
+    support_labels          : support label per support
     active_foundation_mask  : uint8 per vertex — 1 if in contact with foundation
     inactive_foundation_mask: uint8 per vertex — 1 if inside patch but NOT in contact (lift-off)
     in_patch_mask           : uint8 per vertex — 1 if inside any foundation patch (active | inactive)
@@ -133,6 +136,9 @@ def export_result_npz(result, outpath: Path) -> tuple[Path, dict]:
         sigma_vm_mpa=vm_nodal,
         support_vertex_ids=result.support_vertex_ids,
         support_reactions_n=result.support_reactions_n,
+        support_active_mask=result.support_active.astype(np.uint8),
+        support_kinds=result.support_kinds,
+        support_labels=result.support_labels,
         active_foundation_mask=active_mask.astype(np.uint8),
         inactive_foundation_mask=_inactive.astype(np.uint8),
         in_patch_mask=in_patch.astype(np.uint8),
@@ -282,7 +288,12 @@ def plot_result_3d(
     for i, s in enumerate(supports, start=1):
         vid = int(result.support_vertex_ids[i - 1])
         zi = z[vid]
-        color = "#ff7f0e" if s.kind == "spring" else "#d62728"
+        if s.kind == "spring":
+            color = "#ff7f0e"
+        elif s.kind == "spring_tension_only":
+            color = "#9467bd"
+        else:
+            color = "#d62728"
         ax.plot([s.x_mm, s.x_mm], [s.y_mm, s.y_mm], [0.0, zi],
                 color=color, lw=2.0, zorder=5)
         ax.scatter([s.x_mm], [s.y_mm], [zi], color=color, s=40,
