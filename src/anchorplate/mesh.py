@@ -15,22 +15,93 @@ def _unique_sorted(values: Iterable[float], ndigits: int = 10) -> np.ndarray:
     return arr
 
 
-def make_axis_grid(length_mm: float, target_h_mm: float, seeds_mm: Sequence[float]) -> np.ndarray:
-    n = max(int(np.ceil(length_mm / target_h_mm)), 2)
-    base = np.linspace(0.0, length_mm, n + 1)
-    seeded = np.concatenate((base, np.asarray(seeds_mm, dtype=float), np.array([0.0, length_mm])))
-    seeded = seeded[(seeded >= -1e-9) & (seeded <= length_mm + 1e-9)]
-    return _unique_sorted(seeded)
+def _clip_to_domain(value: float, length_mm: float) -> float:
+    return float(np.clip(value, 0.0, length_mm))
+
+
+def _sanitize_box_axis(
+    min_mm: float,
+    max_mm: float,
+    h_mm: float,
+    n_div_min: int,
+    length_mm: float,
+) -> tuple[float, float, float] | None:
+    lo = _clip_to_domain(min(min_mm, max_mm), length_mm)
+    hi = _clip_to_domain(max(min_mm, max_mm), length_mm)
+    span = hi - lo
+    if span <= 1e-12:
+        return None
+    n_div = max(int(n_div_min), 1)
+    h_by_div = span / n_div
+    h_eff = max(min(float(h_mm), h_by_div), 1e-9)
+    return lo, hi, h_eff
+
+
+def _axis_refinement_specs(
+    boxes: Sequence[MeshRefinementBox],
+    axis: str,
+    length_mm: float,
+) -> list[tuple[float, float, float]]:
+    specs: list[tuple[float, float, float]] = []
+    for box in boxes:
+        if axis == "x":
+            spec = _sanitize_box_axis(box.x_min_mm, box.x_max_mm, box.h_mm, box.n_div_min, length_mm)
+        else:
+            spec = _sanitize_box_axis(box.y_min_mm, box.y_max_mm, box.h_mm, box.n_div_min, length_mm)
+        if spec is not None:
+            specs.append(spec)
+    specs.sort(key=lambda it: (it[0], it[1], it[2]))
+    return specs
+
+
+def _segment_target_h(a: float, b: float, global_h: float, specs: Sequence[tuple[float, float, float]]) -> float:
+    h_target = float(global_h)
+    for lo, hi, h_local in specs:
+        overlaps = (a < hi - 1e-12) and (b > lo + 1e-12)
+        if overlaps:
+            h_target = min(h_target, h_local)
+    return max(h_target, 1e-9)
+
+
+def _points_for_segment(a: float, b: float, target_h: float) -> np.ndarray:
+    span = max(b - a, 0.0)
+    n_div = max(int(np.ceil(span / target_h)), 1)
+    return np.linspace(a, b, n_div + 1)
+
+
+def make_axis_grid(
+    length_mm: float,
+    target_h_mm: float,
+    seeds_mm: Sequence[float],
+    refinement_specs: Sequence[tuple[float, float, float]] | None = None,
+) -> np.ndarray:
+    specs = list(refinement_specs or [])
+    breakpoints = [0.0, length_mm]
+    for v in seeds_mm:
+        if -1e-9 <= v <= length_mm + 1e-9:
+            breakpoints.append(_clip_to_domain(float(v), length_mm))
+    for lo, hi, _ in specs:
+        breakpoints.extend([lo, hi])
+
+    bp = _unique_sorted(breakpoints)
+    out: list[float] = [float(bp[0])]
+    for i in range(len(bp) - 1):
+        a = float(bp[i])
+        b = float(bp[i + 1])
+        if b - a <= 1e-12:
+            continue
+        seg_h = _segment_target_h(a, b, target_h_mm, specs)
+        seg = _points_for_segment(a, b, seg_h)
+        out.extend(seg[1:].tolist())
+    return _unique_sorted(out)
 
 
 def seeds_from_boxes(boxes: Sequence[MeshRefinementBox]) -> tuple[list[float], list[float]]:
     xs: list[float] = []
     ys: list[float] = []
     for box in boxes:
-        n_x = max(int(np.ceil((box.x_max_mm - box.x_min_mm) / box.h_mm)), box.n_div_min)
-        n_y = max(int(np.ceil((box.y_max_mm - box.y_min_mm) / box.h_mm)), box.n_div_min)
-        xs.extend(np.linspace(box.x_min_mm, box.x_max_mm, n_x + 1).tolist())
-        ys.extend(np.linspace(box.y_min_mm, box.y_max_mm, n_y + 1).tolist())
+        xs.extend([box.x_min_mm, box.x_max_mm])
+        ys.extend([box.y_min_mm, box.y_max_mm])
     return xs, ys
 
 
@@ -77,13 +148,17 @@ def build_mesh(
                 cl.ref_y_mm,
             ])
 
+    x_specs: list[tuple[float, float, float]] = []
+    y_specs: list[tuple[float, float, float]] = []
     if refinement_boxes:
         bx, by = seeds_from_boxes(refinement_boxes)
         x_seeds.extend(bx)
         y_seeds.extend(by)
+        x_specs = _axis_refinement_specs(refinement_boxes, axis="x", length_mm=plate.length_mm)
+        y_specs = _axis_refinement_specs(refinement_boxes, axis="y", length_mm=plate.width_mm)
 
-    x = make_axis_grid(plate.length_mm, options.target_h_mm, x_seeds)
-    y = make_axis_grid(plate.width_mm, options.target_h_mm, y_seeds)
+    x = make_axis_grid(plate.length_mm, options.target_h_mm, x_seeds, refinement_specs=x_specs)
+    y = make_axis_grid(plate.width_mm, options.target_h_mm, y_seeds, refinement_specs=y_specs)
     return MeshTri.init_tensor(x, y)
 
 

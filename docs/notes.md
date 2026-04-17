@@ -20,4 +20,5 @@
 - Reporta al menos: `n_nodes`, `n_elements`, `h_char`, `w_max`, `sigma_vm_max`, `Rmin/Rmax/ΣR`.
 - Para decidir malla por defecto prioriza métricas globales (`w_max`, `ΣR`) y equilibrio.
 - `sigma_vm_max` es útil como alerta, pero puede estar sesgado por singularidades nodales/locales; no lo uses como criterio único.
+- Incluso con jerarquía de malla limpia, máximos locales (`sigma_vm_max`, picos en nodos puntuales) pueden seguir siendo sensibles al refinamiento local; valida siempre con métricas globales y contexto de detalle constructivo.
 - Con `examples/demo_mesh_convergence.py` puedes comparar además la opción con y sin `MeshRefinementBox` para ver sensibilidad local.

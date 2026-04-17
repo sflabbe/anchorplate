@@ -29,6 +29,8 @@ class ConvergenceRow:
     n_nodes: int
     n_elements: int
     h_char_mm: float
+    h_min_mm: float
+    h_max_mm: float
     w_max_mm: float
     sigma_vm_max_mpa: float
     reaction_min_kN: float
@@ -39,20 +41,29 @@ class ConvergenceRow:
     delta_rsum_vs_fine_pct: float
 
 
-def _default_refinement_boxes() -> list[MeshRefinementBox]:
+REFINEMENT_BOX_GEOMETRY = [
+    ("load-zone", 80.0, 220.0, 80.0, 220.0),
+    ("A1", 0.0, 70.0, 0.0, 70.0),
+    ("A2", 230.0, 300.0, 0.0, 70.0),
+    ("A3", 0.0, 70.0, 230.0, 300.0),
+    ("A4", 230.0, 300.0, 230.0, 300.0),
+]
+
+
+def _refinement_boxes_for_level(level_name: str) -> list[MeshRefinementBox]:
+    # Estrategia monotónica: cada nivel reduce h objetivo local en todas las cajas.
+    h_by_level = {"coarse": 8.0, "medium": 6.0, "fine": 4.0}
+    h_local = h_by_level[level_name]
     return [
-        MeshRefinementBox(80.0, 220.0, 80.0, 220.0, h_mm=4.0, label="load-zone"),
-        MeshRefinementBox(0.0, 70.0, 0.0, 70.0, h_mm=4.0, label="A1"),
-        MeshRefinementBox(230.0, 300.0, 0.0, 70.0, h_mm=4.0, label="A2"),
-        MeshRefinementBox(0.0, 70.0, 230.0, 300.0, h_mm=4.0, label="A3"),
-        MeshRefinementBox(230.0, 300.0, 230.0, 300.0, h_mm=4.0, label="A4"),
+        MeshRefinementBox(x0, x1, y0, y1, h_mm=h_local, label=label)
+        for (label, x0, x1, y0, y1) in REFINEMENT_BOX_GEOMETRY
     ]
 
 
-def _characteristic_h_mm(result: Result) -> float:
+def _mesh_size_stats_mm(result: Result) -> tuple[float, float, float]:
     areas = triangle_areas(result.mesh)
-    # For a structured square grid split into two triangles, A_tri ~= h^2 / 2.
-    return float(np.sqrt(2.0 * np.mean(areas)))
+    h_eq = np.sqrt(2.0 * areas)
+    return float(np.mean(h_eq)), float(np.min(h_eq)), float(np.max(h_eq))
 
 
 def _relative_delta_pct(value: float, reference: float) -> float:
@@ -98,13 +109,17 @@ def _run_one_level(
     )
 
     rz_kN = result.support_reactions_n / 1000.0
+    h_char_mm, h_min_mm, h_max_mm = _mesh_size_stats_mm(result)
+
     row = ConvergenceRow(
         mode="",
         level=level.name,
         target_h_mm=level.target_h_mm,
         n_nodes=int(result.mesh.p.shape[1]),
         n_elements=int(result.mesh.t.shape[1]),
-        h_char_mm=_characteristic_h_mm(result),
+        h_char_mm=h_char_mm,
+        h_min_mm=h_min_mm,
+        h_max_mm=h_max_mm,
         w_max_mm=float(result.max_deflection_mm),
         sigma_vm_max_mpa=float(result.max_von_mises_mpa),
         reaction_min_kN=float(np.min(rz_kN)),
@@ -140,12 +155,12 @@ def _save_markdown(rows: Sequence[ConvergenceRow], outpath: Path, recommendation
         "",
         "Caso: placa 300×300×15 mm, 4 supports fijos y carga acoplada Fz + Mx.",
         "",
-        "| Mode | Level | target_h [mm] | n nodes | n elems | h_char [mm] | w_max [mm] | sigma_vm,max [MPa] | Rmin [kN] | Rmax [kN] | ΣR [kN] | Δw vs fine [%] | Δσvm vs fine [%] | ΔΣR vs fine [%] |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Mode | Level | target_h [mm] | n nodes | n elems | h_char [mm] | h_min [mm] | h_max [mm] | w_max [mm] | sigma_vm,max [MPa] | Rmin [kN] | Rmax [kN] | ΣR [kN] | Δw vs fine [%] | Δσvm vs fine [%] | ΔΣR vs fine [%] |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
         lines.append(
-            f"| {r.mode} | {r.level} | {r.target_h_mm:.2f} | {r.n_nodes} | {r.n_elements} | {r.h_char_mm:.2f} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.2f} | {r.reaction_min_kN:.2f} | {r.reaction_max_kN:.2f} | {r.reaction_sum_kN:.2f} | {r.delta_w_vs_fine_pct:+.2f} | {r.delta_sigma_vs_fine_pct:+.2f} | {r.delta_rsum_vs_fine_pct:+.2f} |"
+            f"| {r.mode} | {r.level} | {r.target_h_mm:.2f} | {r.n_nodes} | {r.n_elements} | {r.h_char_mm:.2f} | {r.h_min_mm:.2f} | {r.h_max_mm:.2f} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.2f} | {r.reaction_min_kN:.2f} | {r.reaction_max_kN:.2f} | {r.reaction_sum_kN:.2f} | {r.delta_w_vs_fine_pct:+.2f} | {r.delta_sigma_vs_fine_pct:+.2f} | {r.delta_rsum_vs_fine_pct:+.2f} |"
         )
 
     lines.extend(
@@ -153,6 +168,7 @@ def _save_markdown(rows: Sequence[ConvergenceRow], outpath: Path, recommendation
             "",
             "## Interpretación rápida",
             "- Convergencia principal: usa `w_max` y `ΣR` como métricas globales.",
+            "- `h_min`/`h_max` ayudan a verificar jerarquía coarse→medium→fine de forma objetiva.",
             "- `sigma_vm_max` puede estar contaminado por singularidades locales y no debe usarse como único criterio.",
             f"- Recomendación de `target_h_mm` por defecto para este caso: **{recommendation}**.",
         ]
@@ -251,11 +267,12 @@ def main() -> None:
 
     modes: list[tuple[str, Sequence[MeshRefinementBox] | None]] = []
     if args.mode in {"both", "with-boxes"}:
-        modes.append(("with_boxes", _default_refinement_boxes()))
+        # Se define por nivel para forzar jerarquía monotónica también dentro de cajas.
+        modes.append(("with_boxes", None))
     if args.mode in {"both", "without-boxes"}:
         modes.append(("without_boxes", None))
 
-    for mode_name, refinement_boxes in modes:
+    for mode_name, base_refinement_boxes in modes:
         mode_rows: list[ConvergenceRow] = []
         mode_dir = root_out / mode_name
         mode_dir.mkdir(parents=True, exist_ok=True)
@@ -267,7 +284,7 @@ def main() -> None:
                 load=load,
                 level=level,
                 outdir=mode_dir,
-                refinement_boxes=refinement_boxes,
+                refinement_boxes=(_refinement_boxes_for_level(level.name) if mode_name == "with_boxes" else base_refinement_boxes),
             )
             row.mode = mode_name
             mode_rows.append(row)
