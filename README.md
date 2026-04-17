@@ -137,6 +137,9 @@ docs/
 
 - Interprets support materials as **equivalent `k_area` models**.
 - Compare `support_type` (`spring` vs `spring_tension_only`) and reaction split columns.
+- Respect validity gating columns before comparing metrics:
+  `solve_status`, `valid_solution`, `metrics_comparable`, `failure_reason`,
+  `equilibrium_error_kN`, `equilibrium_ok`.
 - Outputs in:
   - `outputs/material_benchmark/spring/...`
   - `outputs/material_benchmark/spring_tension_only/...`
@@ -146,10 +149,14 @@ docs/
 
 - Use for side-by-side support-model comparison under identical load cases.
 - Do not mix discrete-only and hybrid conclusions without checking `model_type` and `support_type` columns.
+- Only rows with `valid_solution=true` and `metrics_comparable=true` should be used
+  for benchmark comparisons.
 - Outputs in:
   - `outputs/benchmark_matrix/spring/...`
   - `outputs/benchmark_matrix/spring_tension_only/...`
   each with `benchmark_matrix_summary.csv/.md`, `benchmark_matrix_overview.png`, `benchmark_matrix_note.md`.
+
+See `docs/hybrid_benchmark_validity_policy.md` for the explicit validity policy and tolerances.
 
 ### `examples/demo_anchor_dominant.py`
 

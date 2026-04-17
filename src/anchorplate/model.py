@@ -103,6 +103,8 @@ class AnalysisOptions:
     z_plot_scale: float = 1.0
     foundation_iterations_max: int = 30
     foundation_contact_tol_mm: float = 1e-10
+    equilibrium_tol_abs_kN: float = 0.50
+    equilibrium_tol_rel: float = 0.01
     line_pick_tol_mm: float = 1e-9
 
 

@@ -105,15 +105,15 @@ def main() -> None:
 
     # Console summary table
     print(
-        f"\n{'Support':<20} {'Material':<30} {'LC':<20} {'k [N/mm³]':>10}  "
-        f"{'Anchors':>10}  {'ΣR_anchor [kN]':>14}  {'ΣR_found [kN]':>13}"
+        f"\n{'Support':<20} {'Material':<30} {'LC':<20} {'Status':<30} {'Valid':<6} "
+        f"{'k [N/mm³]':>10}  {'Anchors':>10}  {'ΣR_anchor [kN]':>14}  {'ΣR_found [kN]':>13}  {'Eq.err [kN]':>11}"
     )
     print("-" * 100)
     for r in rows:
         print(
-            f"{r.support_type:<20} {r.material:<30} {r.load_case:<20} {r.k_area_n_mm3:>10.1f}  "
+            f"{r.support_type:<20} {r.material:<30} {r.load_case:<20} {r.solve_status:<30} {str(r.valid_solution):<6} {r.k_area_n_mm3:>10.1f}  "
             f"{f'{r.anchor_active_count}/{r.anchor_inactive_count}':>10}  "
-            f"{r.sum_spring_reactions_kN:>14.2f}  {r.sum_foundation_reaction_kN:>13.2f}"
+            f"{r.sum_spring_reactions_kN:>14.2f}  {r.sum_foundation_reaction_kN:>13.2f}  {r.equilibrium_error_kN:>11.3f}"
         )
 
     print("\nDirect comparison for uplift-sensitive case (LC04_Mx_pure):")
@@ -127,7 +127,8 @@ def main() -> None:
             f"{r.sum_spring_reactions_kN:>14.2f} {r.sum_foundation_reaction_kN:>13.2f}"
         )
 
-    print(f"\nAll {len(rows)} cases converged: {all(r.converged for r in rows)}")
+    valid_count = sum(1 for r in rows if r.valid_solution)
+    print(f"\nValid benchmark cases: {valid_count}/{len(rows)}")
     print(f"Results written to: {outdir.resolve()}")
 
 

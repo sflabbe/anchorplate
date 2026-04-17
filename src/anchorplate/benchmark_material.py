@@ -44,6 +44,7 @@ from .model import (
     SteelLayer,
     SteelPlate,
 )
+from .benchmark_validity import classify_case_validity
 from .support import (
     SupportMaterialModelResult,
     support_material_concrete_simple,
@@ -95,7 +96,10 @@ class MaterialBenchmarkRow:
     model_notes:                 str
     support_type:                str
     solve_status:                str
+    valid_solution:              bool
+    metrics_comparable:          bool
     solve_error:                 str
+    failure_reason:              str
     load_case:                   str
     load_description:            str
     force_kN:                    float
@@ -124,6 +128,9 @@ class MaterialBenchmarkRow:
     sum_foundation_reaction_kN:  float
     # Global equilibrium check: springs + foundation ≈ applied Fz
     sum_total_reactions_kN:      float
+    equilibrium_error_kN:        float
+    equilibrium_ok:              bool
+    equilibrium_tol_kN:          float
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +356,8 @@ def run_material_benchmark(
                 z_plot_scale=options.z_plot_scale,
                 foundation_iterations_max=options.foundation_iterations_max,
                 foundation_contact_tol_mm=options.foundation_contact_tol_mm,
+                equilibrium_tol_abs_kN=options.equilibrium_tol_abs_kN,
+                equilibrium_tol_rel=options.equilibrium_tol_rel,
             )
 
             # Build load — skip cases with no representable load
@@ -376,6 +385,7 @@ def run_material_benchmark(
                 )
             ]
 
+            solve_error = ""
             try:
                 result = solve_anchor_plate(
                     plate=plate,
@@ -385,54 +395,19 @@ def run_material_benchmark(
                     foundation_patches=foundation,
                     name=case_name,
                 )
-                solve_status = "ok"
-                solve_error = ""
+                initial_status = "ok"
             except RuntimeError as exc:
-                rows.append(
-                    MaterialBenchmarkRow(
-                        material=mat.name,
-                        model_name=mat.model_name,
-                        k_area_n_mm3=mat.k_area_n_per_mm3,
-                        model_parameters_json=json.dumps(mat.parameters or {}, sort_keys=True),
-                        model_notes=mat.notes,
-                        support_type=hybrid_support_kind,
-                        solve_status="failed",
-                        solve_error=str(exc),
-                        load_case=lc.name,
-                        load_description=lc.description,
-                        force_kN=lc.force_n / 1000.0,
-                        mx_kNm=lc.mx_nmm / 1.0e6,
-                        my_kNm=lc.my_nmm / 1.0e6,
-                        n_patch_total=0,
-                        n_active=0,
-                        n_inactive=0,
-                        pct_active=0.0,
-                        pct_inactive=0.0,
-                        n_iterations=case_opts.foundation_iterations_max,
-                        converged=False,
-                        w_max_mm=float("nan"),
-                        sigma_vm_max_mpa=float("nan"),
-                        eta_plate=float("nan"),
-                        sum_spring_reactions_kN=float("nan"),
-                        max_spring_reaction_kN=float("nan"),
-                        min_spring_reaction_kN=float("nan"),
-                        anchor_active_count=0,
-                        anchor_inactive_count=len(supports),
-                        anchor_reactions_kN_json="{}",
-                        sum_foundation_reaction_kN=float("nan"),
-                        sum_total_reactions_kN=float("nan"),
-                    )
-                )
-                continue
+                result = None
+                initial_status = "failed"
+                solve_error = str(exc)
 
-            # Plots
-            if case_opts.save_plots:
+            if result is not None and case_opts.save_plots:
                 plot_result(plate, supports, [], [coupled_load], result, case_opts)
-            if case_opts.save_3d_plots:
+            if result is not None and case_opts.save_3d_plots:
                 plot_result_3d(plate, supports, result, case_opts)
 
             # NPZ + contact summary
-            if case_opts.save_result_npz:
+            if result is not None and case_opts.save_result_npz:
                 export_result_npz(result, case_dir / f"{case_name}_result.npz")
                 metadata = {
                     "material_name": mat.name,
@@ -448,15 +423,64 @@ def run_material_benchmark(
                 )
 
             # Collect contact stats
-            active_mask, inactive_mask = _foundation_masks(result)
-            summary = _contact_summary(result, active_mask, inactive_mask)
-            R_kN = result.support_reactions_n / 1000.0
-            found_R_kN = _foundation_total_reaction(result, foundation) / 1000.0
-            anchor_reaction_map = {
-                (s.label or f"A{i+1}"): float(R_kN[i]) for i, s in enumerate(supports)
-            }
-            anchor_active_count = int(np.sum(result.support_active))
-            anchor_inactive_count = int(len(result.support_active) - anchor_active_count)
+            if result is not None:
+                active_mask, inactive_mask = _foundation_masks(result)
+                summary = _contact_summary(result, active_mask, inactive_mask)
+                R_kN = result.support_reactions_n / 1000.0
+                found_R_kN = _foundation_total_reaction(result, foundation) / 1000.0
+                anchor_reaction_map = {
+                    (s.label or f"A{i+1}"): float(R_kN[i]) for i, s in enumerate(supports)
+                }
+                anchor_active_count = int(np.sum(result.support_active))
+                anchor_inactive_count = int(len(result.support_active) - anchor_active_count)
+                sum_spring_kN = float(np.sum(R_kN))
+                sum_total_kN = sum_spring_kN + found_R_kN
+                validity = classify_case_validity(
+                    initial_solve_status=initial_status,
+                    solve_error=solve_error,
+                    expected_vertical_load_kN=lc.force_n / 1000.0,
+                    total_reactions_kN=sum_total_kN,
+                    contact_converged=bool(summary["converged"]),
+                    requires_contact_convergence=True,
+                    has_foundation_patch=True,
+                    support_type=hybrid_support_kind,
+                    force_n=lc.force_n,
+                    mx_nmm=lc.mx_nmm,
+                    my_nmm=lc.my_nmm,
+                    equilibrium_tol_abs_kN=case_opts.equilibrium_tol_abs_kN,
+                    equilibrium_tol_rel=case_opts.equilibrium_tol_rel,
+                )
+            else:
+                summary = {
+                    "n_patch_total": 0,
+                    "n_active": 0,
+                    "n_inactive": 0,
+                    "pct_active": 0.0,
+                    "pct_inactive": 0.0,
+                    "n_iterations": case_opts.foundation_iterations_max,
+                    "converged": False,
+                }
+                found_R_kN = float("nan")
+                anchor_reaction_map = {}
+                anchor_active_count = 0
+                anchor_inactive_count = len(supports)
+                sum_spring_kN = float("nan")
+                sum_total_kN = float("nan")
+                validity = classify_case_validity(
+                    initial_solve_status=initial_status,
+                    solve_error=solve_error,
+                    expected_vertical_load_kN=lc.force_n / 1000.0,
+                    total_reactions_kN=0.0,
+                    contact_converged=False,
+                    requires_contact_convergence=True,
+                    has_foundation_patch=True,
+                    support_type=hybrid_support_kind,
+                    force_n=lc.force_n,
+                    mx_nmm=lc.mx_nmm,
+                    my_nmm=lc.my_nmm,
+                    equilibrium_tol_abs_kN=case_opts.equilibrium_tol_abs_kN,
+                    equilibrium_tol_rel=case_opts.equilibrium_tol_rel,
+                )
 
             rows.append(MaterialBenchmarkRow(
                 material=mat.name,
@@ -465,8 +489,11 @@ def run_material_benchmark(
                 model_parameters_json=json.dumps(mat.parameters or {}, sort_keys=True),
                 model_notes=mat.notes,
                 support_type=hybrid_support_kind,
-                solve_status=solve_status,
+                solve_status=validity.solve_status,
+                valid_solution=validity.valid_solution,
+                metrics_comparable=validity.metrics_comparable,
                 solve_error=solve_error,
+                failure_reason=validity.failure_reason,
                 load_case=lc.name,
                 load_description=lc.description,
                 force_kN=lc.force_n / 1000.0,
@@ -479,17 +506,20 @@ def run_material_benchmark(
                 pct_inactive=summary["pct_inactive"],
                 n_iterations=summary["n_iterations"],
                 converged=summary["converged"],
-                w_max_mm=result.max_deflection_mm,
-                sigma_vm_max_mpa=result.max_von_mises_mpa,
-                eta_plate=result.max_von_mises_mpa / plate.fy_d_mpa,
-                sum_spring_reactions_kN=float(np.sum(R_kN)),
-                max_spring_reaction_kN=float(np.max(R_kN)),
-                min_spring_reaction_kN=float(np.min(R_kN)),
+                w_max_mm=result.max_deflection_mm if result is not None else float("nan"),
+                sigma_vm_max_mpa=result.max_von_mises_mpa if result is not None else float("nan"),
+                eta_plate=(result.max_von_mises_mpa / plate.fy_d_mpa) if result is not None else float("nan"),
+                sum_spring_reactions_kN=sum_spring_kN,
+                max_spring_reaction_kN=float(np.max(R_kN)) if result is not None else float("nan"),
+                min_spring_reaction_kN=float(np.min(R_kN)) if result is not None else float("nan"),
                 anchor_active_count=anchor_active_count,
                 anchor_inactive_count=anchor_inactive_count,
                 anchor_reactions_kN_json=json.dumps(anchor_reaction_map, sort_keys=True),
                 sum_foundation_reaction_kN=found_R_kN,
-                sum_total_reactions_kN=float(np.sum(R_kN)) + found_R_kN,
+                sum_total_reactions_kN=sum_total_kN,
+                equilibrium_error_kN=validity.equilibrium_error_kN,
+                equilibrium_ok=validity.equilibrium_ok,
+                equilibrium_tol_kN=validity.equilibrium_tol_kN,
             ))
 
     _save_csv(rows, outdir / "material_benchmark_summary.csv")
@@ -523,18 +553,18 @@ def _save_markdown(rows: Sequence[MaterialBenchmarkRow], path: Path) -> None:
     header = textwrap.dedent("""\
         # Material benchmark — foundation patch (compression-only)
 
-        | Material | Model | Support type | Solve | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | Anchors active/inactive | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] |
-        |---|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+        | Material | Model | Support type | Solve | Valid | Comparable metrics | Failure reason | k [N/mm³] | Load case | Fz [kN] | Mx [kNm] | My [kNm] | Contact [%] | Lift-off [%] | Iter | Anchors active/inactive | w_max [mm] | σ_v,max [MPa] | η | ΣR_anker [kN] | ΣR_found [kN] | ΣR_total [kN] | Eq. err [kN] | Eq. ok |
+        |---|---|---|---|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
     """)
     lines = [header.rstrip()]
     for r in rows:
         lines.append(
-            f"| {r.material} | {r.model_name} | {r.support_type} | {r.solve_status} | {r.k_area_n_mm3:.1f} | {r.load_case} "
+            f"| {r.material} | {r.model_name} | {r.support_type} | {r.solve_status} | {r.valid_solution} | {r.metrics_comparable} | {r.failure_reason or '—'} | {r.k_area_n_mm3:.1f} | {r.load_case} "
             f"| {r.force_kN:.0f} | {r.mx_kNm:.1f} | {r.my_kNm:.1f} "
             f"| {r.pct_active:.1f} | {r.pct_inactive:.1f} | {r.n_iterations} "
             f"| {r.anchor_active_count}/{r.anchor_inactive_count} | {r.w_max_mm:.4f} | {r.sigma_vm_max_mpa:.1f} | {r.eta_plate:.3f} "
             f"| {r.sum_spring_reactions_kN:.2f} | {r.sum_foundation_reaction_kN:.2f} "
-            f"| {r.sum_total_reactions_kN:.2f} |"
+            f"| {r.sum_total_reactions_kN:.2f} | {r.equilibrium_error_kN:.3f} | {r.equilibrium_ok} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -569,9 +599,9 @@ def _save_overview_plots(
         lc_rows = [r for r in rows if r.load_case == lc_name]
         lc_desc = lc_rows[0].load_description if lc_rows else lc_name
 
-        eta_vals     = [next((r.eta_plate     for r in lc_rows if r.material == m.name), 0.0) for m in materials]
-        contact_vals = [next((r.pct_active    for r in lc_rows if r.material == m.name), 0.0) for m in materials]
-        liftoff_vals = [next((r.pct_inactive  for r in lc_rows if r.material == m.name), 0.0) for m in materials]
+        eta_vals = [next((r.eta_plate for r in lc_rows if r.material == m.name and r.metrics_comparable), np.nan) for m in materials]
+        contact_vals = [next((r.pct_active for r in lc_rows if r.material == m.name and r.metrics_comparable), np.nan) for m in materials]
+        liftoff_vals = [next((r.pct_inactive for r in lc_rows if r.material == m.name and r.metrics_comparable), np.nan) for m in materials]
 
         ax_eta = axes[i][0]
         ax_c   = axes[i][1]
@@ -608,9 +638,10 @@ def _save_overview_plots(
 
     for j, lc_name in enumerate(lc_names):
         lc_rows   = [r for r in rows if r.load_case == lc_name]
-        k_vals    = [r.k_area_n_mm3 for r in lc_rows]
-        pct_vals  = [r.pct_active   for r in lc_rows]
-        w_vals    = [r.w_max_mm     for r in lc_rows]
+        valid_rows = [r for r in lc_rows if r.metrics_comparable]
+        k_vals = [r.k_area_n_mm3 for r in valid_rows]
+        pct_vals = [r.pct_active for r in valid_rows]
+        w_vals = [r.w_max_mm for r in valid_rows]
         ax_top.plot(k_vals, pct_vals, "o-", label=lc_name, color=colors[j % len(colors)])
         ax_bot.plot(k_vals, w_vals,   "s--", label=lc_name, color=colors[j % len(colors)])
 
