@@ -1,202 +1,104 @@
-# Anchorplate Morley
+# anchorplate
 
-A lightweight finite element prototype for anchor plates using a Morley plate element in `scikit-fem`.
+Finite element prototype for **steel anchor plates** using a **Kirchhoff-Love plate model** with the **Morley triangular element** via `scikit-fem`.
 
-The repository focuses on the **out-of-plane plate bending** subproblem of anchor plates with:
+The project is aimed at the **out-of-plane plate-bending subproblem** around anchor groups and contact patches. It is useful for studying plate deformation, support reactions, lift-off, and local plate stresses under vertical force and bending moments.
 
-- coupled reference-point style loading distributed onto two lines
-- fixed or spring-supported anchors
-- Winkler foundation patches
-- compression-only contact via active-set iteration
-- local mesh refinement around anchors, load introduction zones, and contact regions
-- benchmark scripts for load-case sweeps and material stiffness comparisons
+## What this repository does
 
-## Scope
+- Models a steel plate as a thin bending plate with `ElementTriMorley`
+- Supports **fixed anchors** and **vertical spring anchors**
+- Transfers load from a **reference point** to **two parallel straight lines** to emulate a profile or double-flat-bar load introduction
+- Supports **compression-only Winkler foundation patches** with active-set contact iteration
+- Includes simple support-material models for:
+  - concrete
+  - timber
+  - stacked steel layers
+  - calibrated user-defined bedding stiffness
+- Provides:
+  - 2D plots
+  - 3D deformed-shape plots
+  - NPZ export for post-processing
+  - benchmark runners
+  - mesh-refinement helpers
+  - basic tests for support models, contact logic, and import hygiene
 
-This code is useful when you want to study **plate deformation, support reactions, contact area, lift-off, and plate stresses** for a steel anchor plate under vertical force and bending.
+## What this repository does **not** do
 
-It is **not** a full anchor design package. The following topics are intentionally outside the current scope:
+This is **not** a full anchor-design package.
 
-- anchor shear design in `Fx` / `Fy`
-- in-plane torsion `Mz` as a full anchor-group design problem
-- concrete cone, pry-out, edge breakout, pull-out, and related fastener checks
-- tangential friction/contact
-- material nonlinearity of the steel plate
+Out of scope today:
 
-## Features
+- full anchor-group design for `Fx`, `Fy`, and `Mz`
+- concrete cone, pull-out, pry-out, edge breakout, etc.
+- frictional tangential contact
+- nonlinear steel plasticity
+- detailed timber orthotropy/contact as a full advanced material model
+- full shell-shell or solid-solid contact mechanics for timber/steel assemblies
 
-- Kirchhoff-Love plate solver with `ElementTriMorley`
-- nodal point supports as either fixed supports or vertical springs `Kz`
-- reference-point style load transfer to two parallel lines from `Fz`, `Mx`, and `My`
-- bedding models for concrete, timber, steel layers, and calibrated user input
-- traceable support-material wrapper API with model metadata (`model_name`, parameters, notes)
-- compression-only foundation patches with active/inactive contact masks
-- 2D and 3D plotting utilities
-- NPZ export for post-processing and debugging
-- reproducible benchmark scripts that write CSV and Markdown summaries
+`Fx` and `Fy` can be projected into equivalent plate moments using a stand-off `e_out`, but that is still only the **plate-bending subproblem**, not full anchor verification.
 
-## Installation
+## Core modeling assumptions
 
-```bash
-pip install -e .
-```
+### Plate model
 
-Main runtime dependencies:
+The steel plate is modeled as a **Kirchhoff-Love plate** in bending. The main unknown is transverse deflection `w`.
 
-- `numpy`
-- `scipy`
-- `matplotlib`
-- `scikit-fem`
-- `pandas`
+Units used throughout the repo:
 
-## Public API and optional dependencies
+- length: `mm`
+- force: `N`
+- stress: `MPa = N/mm²`
 
-`anchorplate` keeps lightweight imports (`model`, `support`) separate from FE-heavy
-modules (`solver`, `plotting`, `benchmark`).
+### Support models
 
-- Safe in minimal environments (without `scikit-fem`):
-  - `import anchorplate.model`
-  - `import anchorplate.support`
-- FE features still live in explicit submodules:
-  - `from anchorplate.solver import solve_anchor_plate`
-  - `from anchorplate.plotting import plot_result_3d`
-  - `from anchorplate.benchmark import run_profis_like_benchmark`
+The code currently supports three main support idealizations:
 
-For backward compatibility, FE symbols remain available from `anchorplate` via lazy
-exports; attempting to use them without FE dependencies will raise a clear error.
+1. **Fixed discrete supports**
+   - nodal `w = 0` at anchor positions
 
-## Quick start
+2. **Spring anchors**
+   - nodal vertical springs with stiffness `kz [N/mm]`
+   - reaction extracted as `R = kz * w`
 
-Run the smallest example first:
+3. **Foundation patches**
+   - distributed bedding stiffness `k_area [N/mm³]`
+   - optional **compression-only** behavior using active-set iteration
+   - useful for grout, concrete bearing, timber compression-perpendicular simplifications, or calibrated interfaces
 
-```bash
-python examples/demo_single_case.py
-```
+### Load introduction
 
-Then try the benchmark sweep:
+The repo includes a **reference-point style coupled load** that distributes `Fz`, `Mx`, and `My` to **two straight lines**. This is intended as a practical approximation of a profile introducing load into the plate, similar in spirit to an RP plus coupling in a 3D FE model.
 
-```bash
-python examples/demo_benchmark.py
-```
+### Bedding / support-material models
 
-Outputs are written to `outputs/...` and are intentionally ignored by Git.
+The support module currently includes simple but traceable helper laws:
 
-## Support material API (clean + traceable)
+- `concrete_simple`: `k = E_cm / h_eff`
+- `concrete_advanced`: geometry-corrected concrete helper
+- `timber_simple`: `k = spread_factor * E_90 / h_eff`
+- `steel_layers_simple`: `1 / k = Σ(t_i / E_i)`
+- `calibrated`: direct user-defined `k`
 
-Use the high-level support material wrappers when you want explicit metadata for
-benchmarking and result tracking:
-
-```python
-from anchorplate.benchmark_material import material_spec_from_model_result
-from anchorplate.model import SteelLayer
-from anchorplate.support import (
-    support_material_concrete_simple,
-    support_material_steel_layers_simple,
-    support_material_timber_simple,
-)
-
-grout = support_material_concrete_simple(e_cm_mpa=32_000.0, h_eff_mm=50.0)
-steel = support_material_steel_layers_simple(
-    [SteelLayer(thickness_mm=10.0, youngs_modulus_mpa=210_000.0)]
-)
-timber = support_material_timber_simple(e90_mpa=390.0, h_eff_mm=50.0)
-
-materials = [
-    material_spec_from_model_result("Grout C25/30 h=50 mm", "grout", grout),
-    material_spec_from_model_result("Steel S235 t=10 mm", "steel", steel),
-    material_spec_from_model_result("Timber GL24h h=50 mm", "timber", timber),
-]
-```
-
-Each wrapper returns:
-
-- `k_area_n_per_mm3`
-- `model_name`
-- `parameters`
-- `notes`
-
-The material benchmark includes this metadata in CSV rows and Markdown summaries.
-
-## Examples
-
-The repository ships with example scripts in `examples/`.
-A short index is available in [`examples/README.md`](examples/README.md).
-
-### `demo_single_case.py`
-Minimal sanity-check model with 4 fixed supports and one coupled vertical load.
-
-Writes mesh and result plots plus an NPZ result bundle.
-
-### `demo_benchmark.py`
-Runs a PROFIS-like load-case sweep for a plate with 4 fixed corner supports.
-
-Writes per-case plots and summary files such as:
-
-- `benchmark_summary.csv`
-- `benchmark_summary.md`
-- `benchmark_overview.png`
-
-### `demo_benchmark_springs.py`
-Same sweep as above, but with spring-supported anchors instead of fixed supports.
-
-Useful to study how reaction extraction and rigid-body compliance change the response.
-
-### `demo_foundation_patch.py`
-Mixed bedding example with two compression-only foundation zones:
-
-- concrete zone
-- timber zone
-
-Shows contact iteration and lift-off behaviour with a combined `Fz + Mx` load.
-
-### `demo_foundation_patch_3d.py`
-More documented foundation/contact example with:
-
-- 3D deformed-shape plot
-- NPZ export
-- contact summary text output
-
-Use this when you want to inspect active vs inactive contact regions in detail.
-
-### `demo_benchmark_material.py`
-Material sensitivity benchmark for the compression-only foundation patch.
-
-Compares default bedding materials across multiple load cases and writes summary tables and overview plots.
-
-### `verify_benchmark_csv.py`
-Post-processing helper that reads the benchmark CSV and adds equilibrium error columns.
-
-Useful as a quick audit step after a benchmark run.
-
-### `demo_benchmark_matrix.py`
-Consolidated benchmark matrix across support-model assumptions (`fixed`, `spring_anchors`,
-`foundation_patch_*`) evaluated on the same compact load-case set.
-
-Writes matrix CSV/Markdown summaries plus an overview plot and a technical note.
-
-### `demo_mesh_convergence.py`
-Coarse/medium/fine mesh-convergence study for a representative `Fz + Mx` case, with
-optional refinement boxes (`--mode with-boxes`, `--mode without-boxes`, or `--mode both`).
-
-Writes convergence CSV/Markdown summaries and an overview plot.
+These are engineering approximations, not universal constitutive truth. The repo keeps the chosen model name, parameters, and notes so benchmark outputs remain traceable.
 
 ## Repository layout
 
 ```text
 src/anchorplate/
   __init__.py
-  benchmark.py            PROFIS-like benchmark sweep
-  benchmark_material.py   material stiffness benchmark
-  loading.py              coupled load transfer and equivalent line loading
-  mesh.py                 mesh generation and local refinement helpers
-  model.py                dataclasses and model input definitions
-  plotting.py             2D/3D visualisation and NPZ export
-  postprocess.py          moments, stresses, and result recovery
-  solver.py               assembly, constraints, and solve routine
-  support.py              bedding and support stiffness helper functions
+  benchmark.py            PROFIS-like plate benchmark
+  benchmark_material.py   bedding-material sensitivity benchmark
+  benchmark_matrix.py     consolidated support-model matrix benchmark
+  loading.py              RP-to-line load transfer helpers
+  mesh.py                 mesh generation and refinement helpers
+  model.py                dataclasses and analysis options
+  plotting.py             2D/3D plots and NPZ export
+  postprocess.py          moment/stress recovery helpers
+  solver.py               FE assembly, contact iteration, reactions
+  support.py              support-material and bedding helpers
 
 examples/
-  README.md
   demo_single_case.py
   demo_benchmark.py
   demo_benchmark_springs.py
@@ -207,45 +109,228 @@ examples/
   demo_mesh_convergence.py
   verify_benchmark_csv.py
 
+examples/README.md        short example index
+
 docs/
   notes.md
-  contact_liftoff_guide.md
   bugfix_spring_reactions.md
+  contact_liftoff_guide.md
+  timber_advanced_roadmap.md
 
 tests/
-  test_equivalent_line_load.py
-  test_support_models.py
-  test_spring_reactions.py
-  test_foundation_contact.py
   test_benchmark_material.py
+  test_equivalent_line_load.py
+  test_foundation_contact.py
+  test_import_hygiene.py
+  test_spring_reactions.py
+  test_support_models.py
 ```
 
-## Units and conventions
+## Installation
 
-The code uses:
+Python requirement from `pyproject.toml`:
 
-- `mm`
-- `N`
-- `MPa = N/mm²`
+- Python `>= 3.11`
 
-For the foundation-patch examples:
+Install in editable mode:
 
-- `w > 0` means motion into the support/foundation, i.e. compression/contact
-- `w <= 0` means lift-off, so compression-only bedding is inactive there
+```bash
+pip install -e .
+```
+
+Main dependencies:
+
+- `numpy`
+- `scipy`
+- `matplotlib`
+- `scikit-fem`
+- `pandas`
+
+## Import hygiene and optional FE dependency
+
+The package is organized so lightweight submodules can be imported without pulling the full FE stack immediately.
+
+Lightweight imports:
+
+```python
+import anchorplate.model
+import anchorplate.support
+```
+
+FE-heavy functionality remains in explicit submodules or lazy exports:
+
+```python
+from anchorplate.solver import solve_anchor_plate
+from anchorplate.plotting import plot_result_3d
+from anchorplate.benchmark import run_profis_like_benchmark
+```
+
+If `scikit-fem` is missing, FE features will fail with a clear error, but support-model utilities should remain usable.
+
+## Quick start
+
+Run the smallest end-to-end example first:
+
+```bash
+python examples/demo_single_case.py
+```
+
+Then try the main fixed-support benchmark:
+
+```bash
+python examples/demo_benchmark.py
+```
+
+Then compare against spring anchors:
+
+```bash
+python examples/demo_benchmark_springs.py
+```
+
+Then inspect lift-off/contact in 3D:
+
+```bash
+python examples/demo_foundation_patch_3d.py
+```
+
+Then material sensitivity and consolidated benchmark matrix:
+
+```bash
+python examples/demo_benchmark_material.py
+python examples/demo_benchmark_matrix.py
+```
+
+Finally, run a practical mesh-convergence check:
+
+```bash
+python examples/demo_mesh_convergence.py --mode both
+```
+
+Generated results are written to `outputs/...` and are intended as disposable artifacts.
+
+## Example guide
+
+### `demo_single_case.py`
+Small sanity check for:
+
+- plate setup
+- mesh generation
+- coupled line load transfer
+- result plotting
+- NPZ export
+
+### `demo_benchmark.py`
+Runs a PROFIS-like sweep on a plate with **fixed supports**.
+
+Typical outputs:
+
+- per-case result plots
+- `benchmark_summary.csv`
+- `benchmark_summary.md`
+- `benchmark_overview.png`
+
+### `demo_benchmark_springs.py`
+Same idea as above, but using **spring-supported anchors**.
+Useful for checking reaction extraction and the effect of finite support stiffness.
+
+### `demo_foundation_patch.py`
+Mixed-bedding contact example with distributed support patches.
+
+### `demo_foundation_patch_3d.py`
+Best entry point for checking:
+
+- active vs inactive contact zones
+- lift-off
+- deformed shape relative to `z = 0`
+- exported NPZ masks (`active`, `inactive`, `in_patch`)
+
+### `demo_benchmark_material.py`
+Material sensitivity benchmark for foundation bedding stiffness.
+Currently compares simplified support-material models such as grout/concrete, steel, and timber.
+
+### `demo_benchmark_matrix.py`
+Consolidated matrix across different support assumptions, including:
+
+- fixed anchors
+- spring anchors
+- spring anchors + full foundation patch with different materials
+
+This is the best script for a fast cross-model comparison under the same load cases.
+
+### `demo_mesh_convergence.py`
+Coarse/medium/fine convergence study for a representative bending case.
+Useful for checking whether global outputs such as `w_max`, reaction sums, and plate stress indicators stabilize with mesh refinement.
+
+### `verify_benchmark_csv.py`
+Post-processes benchmark CSV files to add equilibrium-check columns.
+Useful as a quick audit step after a benchmark run.
+
+## Typical outputs
+
+Depending on the example, the repo can generate:
+
+- 2D result plots
+- 3D deformed-shape plots
+- mesh plots
+- CSV summaries
+- Markdown summaries
+- NPZ result bundles for custom post-processing
+
+Foundation/contact examples also export or reconstruct:
+
+- active foundation mask
+- inactive foundation mask
+- in-patch mask
+- contact-iteration history
 
 ## Testing
+
+Run the test suite with:
 
 ```bash
 pytest -q
 ```
 
-## Notes for publication
+Note that FE-heavy tests require the FE dependency stack installed.
 
-This repository archive has been cleaned for GitHub upload:
+## Known limitations and current maturity
 
-- generated `outputs/` were removed
-- `__pycache__` and `*.egg-info` folders were removed
-- test files were consolidated under `tests/`
-- documentation notes were moved into `docs/`
+This repository is already useful for:
 
-# anchorplate
+- plate-level comparison of support assumptions
+- studying lift-off vs contact area
+- checking reaction patterns for fixed vs spring supports
+- comparing simplified concrete/steel/timber bedding assumptions
+- building reproducible benchmark plots and CSV summaries
+
+It should still be treated as a **prototype / engineering sandbox**, not as a production-certified verification tool.
+
+In particular:
+
+- local stress peaks near nodal supports or concentrated load-introduction zones are mesh-sensitive
+- simplified bedding laws for concrete/timber/steel are engineering surrogates
+- timber is not yet modeled as a full orthotropic contact body
+- foundation patches represent distributed normal support, not full interface mechanics
+
+## Documentation notes
+
+Useful supporting docs shipped with the repo:
+
+- `docs/bugfix_spring_reactions.md`
+- `docs/contact_liftoff_guide.md`
+- `docs/timber_advanced_roadmap.md`
+- `docs/notes.md`
+
+## Practical recommendation
+
+Recommended order for someone new to the repo:
+
+1. `demo_single_case.py`
+2. `demo_benchmark.py`
+3. `demo_benchmark_springs.py`
+4. `demo_foundation_patch_3d.py`
+5. `demo_benchmark_material.py`
+6. `demo_benchmark_matrix.py`
+7. `demo_mesh_convergence.py`
+
+That sequence tends to surface installation issues, reaction issues, contact interpretation, material sensitivity, and mesh sensitivity in a sensible order.
