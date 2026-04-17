@@ -41,3 +41,17 @@ Runnable scripts for the main analysis/benchmark modes.
   - `docs/hybrid_benchmark_validity_policy.md`
 
 All files under `outputs/...` are generated artifacts.
+
+
+## Declarative TOML inputs
+
+- `toml/simple_case.toml`: single minimal case.
+- `toml/foundation_patch_case.toml`: hybrid case with `[support_material_model]`.
+- `toml/parametric_study.toml`: compact sweep/study template.
+
+Run with:
+
+```bash
+python -m anchorplate.run_case examples/toml/simple_case.toml
+python -m anchorplate.run_case examples/toml/parametric_study.toml
+```
