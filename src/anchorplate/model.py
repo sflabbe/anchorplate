@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Sequence
 
+import numpy as np
+
 
 @dataclass(frozen=True)
 class SteelPlate:
@@ -26,7 +28,7 @@ class SteelPlate:
 class PointSupport:
     x_mm: float
     y_mm: float
-    kind: Literal["fixed", "spring"] = "fixed"
+    kind: Literal["fixed", "spring", "spring_tension_only"] = "fixed"
     kz_n_per_mm: float = 0.0
     label: str = ""
 
@@ -111,3 +113,24 @@ class FoundationState:
     # Full vertex set for every patch (active ∪ inactive). Populated by the solver.
     # Needed to reconstruct which nodes are in the patch domain but NOT in contact.
     all_patch_vertices: list[set[int]] = field(default_factory=list)
+
+
+@dataclass
+class AnchorSpringState:
+    """
+    State of discrete anchor springs for nonlinear support models.
+
+    Sign convention
+    ---------------
+    The solver uses w [mm] positive downward.
+    For `spring_tension_only`, spring extension (tension) is defined as:
+        delta_tension = w
+    Therefore:
+      - active (tension):   w > +tol_mm
+      - inactive (compression / no tension): w <= -tol_mm
+      - in (-tol_mm, +tol_mm), previous active-set state is kept (hysteresis).
+    """
+
+    active: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=bool))
+    history_changes: list[int] = field(default_factory=list)
+    tension_only_indices: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=int))

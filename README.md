@@ -7,7 +7,7 @@ The project is aimed at the **out-of-plane plate-bending subproblem** around anc
 ## What this repository does
 
 - Models a steel plate as a thin bending plate with `ElementTriMorley`
-- Supports **fixed anchors** and **vertical spring anchors**
+- Supports **fixed anchors**, **linear vertical springs**, and **tension-only springs**
 - Transfers load from a **reference point** to **two parallel straight lines** to emulate a profile or double-flat-bar load introduction
 - Supports **compression-only Winkler foundation patches** with active-set contact iteration
 - Includes simple support-material models for:
@@ -317,6 +317,7 @@ In particular:
 Useful supporting docs shipped with the repo:
 
 - `docs/bugfix_spring_reactions.md`
+- `docs/spring_tension_only.md`
 - `docs/contact_liftoff_guide.md`
 - `docs/timber_advanced_roadmap.md`
 - `docs/notes.md`

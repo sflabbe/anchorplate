@@ -4,6 +4,7 @@ from importlib import import_module
 
 from .model import (
     AnalysisOptions,
+    AnchorSpringState,
     ConcreteAdvancedInput,
     CoupledLineLoad,
     FoundationPatch,
@@ -33,6 +34,9 @@ from .support import (
 _LAZY_EXPORTS = {
     "Result": ("anchorplate.solver", "Result"),
     "solve_anchor_plate": ("anchorplate.solver", "solve_anchor_plate"),
+    "export_support_reactions_csv": ("anchorplate.solver", "export_support_reactions_csv"),
+    "export_support_reactions_json": ("anchorplate.solver", "export_support_reactions_json"),
+    "support_reaction_rows": ("anchorplate.solver", "support_reaction_rows"),
     "export_result_npz": ("anchorplate.plotting", "export_result_npz"),
     "plot_result_3d": ("anchorplate.plotting", "plot_result_3d"),
     "run_profis_like_benchmark": ("anchorplate.benchmark", "run_profis_like_benchmark"),
@@ -41,6 +45,7 @@ _LAZY_EXPORTS = {
 
 __all__ = [
     "AnalysisOptions",
+    "AnchorSpringState",
     "ConcreteAdvancedInput",
     "CoupledLineLoad",
     "FoundationPatch",
