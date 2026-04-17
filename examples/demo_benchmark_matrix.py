@@ -1,15 +1,19 @@
 """
 demo_benchmark_matrix.py
 ========================
-Benchmark matrix consolidado para comparar modelos de soporte bajo los mismos
-load cases (compactos): Fz céntrico, Fz+Mx, Fz+My y Mx puro.
+Benchmark matrix para comparar modelos de soporte bajo la misma familia de
+casos compactos (Fz céntrico, Fz+Mx, Fz+My y Mx puro).
 
-Modelos incluidos:
+Se ejecuta dos veces:
+- híbrido con anclajes "spring"
+- híbrido con anclajes "spring_tension_only"
+
+En cada rama se comparan:
 - fixed
 - spring_anchors
-- foundation_patch_concrete
-- foundation_patch_steel
-- foundation_patch_timber
+- foundation_patch_concrete__<support_kind>
+- foundation_patch_steel__<support_kind>
+- foundation_patch_timber__<support_kind>
 
 Run
 ---
@@ -17,10 +21,12 @@ Run
 
 Outputs (outputs/benchmark_matrix/)
 -----------------------------------
-- benchmark_matrix_summary.csv
-- benchmark_matrix_summary.md
-- benchmark_matrix_overview.png
-- benchmark_matrix_note.md
+- spring/benchmark_matrix_summary.csv
+- spring/benchmark_matrix_summary.md
+- spring/benchmark_matrix_overview.png
+- spring/benchmark_matrix_note.md
+- spring/<model_key>/<load_case>/...
+- spring_tension_only/(misma estructura)
 """
 
 from __future__ import annotations

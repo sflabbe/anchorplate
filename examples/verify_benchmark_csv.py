@@ -1,3 +1,15 @@
+"""
+verify_benchmark_csv.py
+=======================
+Post-proceso de equilibrio vertical para un CSV de benchmark existente.
+
+Por defecto lee:
+- `outputs/demo_benchmark/benchmark_summary.csv`
+
+Y genera:
+- `benchmark_verification.csv` en la misma carpeta.
+"""
+
 from pathlib import Path
 import pandas as pd
 

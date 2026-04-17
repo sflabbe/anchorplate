@@ -1,3 +1,18 @@
+"""
+demo_benchmark.py
+=================
+PROFIS-like benchmark base con 4 apoyos discretos fijos.
+
+Qué corre:
+- familia completa de casos `default_cases()` de `anchorplate.benchmark`
+
+Qué genera y dónde:
+- `outputs/demo_benchmark/benchmark_summary.csv`
+- `outputs/demo_benchmark/benchmark_summary.md`
+- `outputs/demo_benchmark/benchmark_overview.png`
+- `outputs/demo_benchmark/<load_case>/...` (plots y opcionalmente 3D/NPZ según options)
+"""
+
 from pathlib import Path
 
 from anchorplate.benchmark import run_profis_like_benchmark
