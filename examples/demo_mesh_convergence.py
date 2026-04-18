@@ -20,7 +20,7 @@ from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 
-from anchorplate.mesh import triangle_areas
+from anchorplate.mesh import element_areas
 from anchorplate.model import AnalysisOptions, CoupledLineLoad, MeshRefinementBox, PointSupport, SteelPlate
 from anchorplate.plotting import plot_mesh
 from anchorplate.solver import Result, solve_anchor_plate
@@ -72,7 +72,7 @@ def _refinement_boxes_for_level(level_name: str) -> list[MeshRefinementBox]:
 
 
 def _mesh_size_stats_mm(result: Result) -> tuple[float, float, float]:
-    areas = triangle_areas(result.mesh)
+    areas = element_areas(result.mesh)
     h_eq = np.sqrt(2.0 * areas)
     return float(np.mean(h_eq)), float(np.min(h_eq)), float(np.max(h_eq))
 
