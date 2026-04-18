@@ -7,7 +7,7 @@ name = "anchorplate-morley"
 version = "0.2.0"
 description = "Morley plate prototype for anchor plates with Winkler bedding, coupled line loading, and benchmark cases"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26",
   "scipy>=1.11",
