@@ -236,3 +236,14 @@ def nodal_tributary_areas(mesh: MeshType) -> np.ndarray:
     for local in range(n_local):
         np.add.at(nodal, conn[:, local], areas / n_local)
     return nodal
+
+
+def triangle_areas(mesh: MeshType) -> np.ndarray:
+    """Backward-compatible alias for triangular element area calculation.
+
+    Historically examples imported ``triangle_areas`` from this module. The
+    mesh internals were generalized to mixed element topologies and renamed to
+    :func:`element_areas`; keep this alias to avoid breaking existing scripts.
+    """
+    return element_areas(mesh)
+
