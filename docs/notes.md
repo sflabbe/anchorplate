@@ -16,7 +16,7 @@
 
 ## Convergencia de malla (coarse/medium/fine)
 
-- Usa un caso representativo (p.ej. placa 300×300×15 con 4 supports y `Fz + Mx`) y evalúa mínimo tres niveles de malla.
+- Usa un caso representativo (p.ej. placa 300×300×15 con 4 anchors y `Fz + Mx`) y evalúa mínimo tres niveles de malla.
 - Reporta al menos: `n_nodes`, `n_elements`, `h_char`, `w_max`, `sigma_vm_max`, `Rmin/Rmax/ΣR`.
 - Para decidir malla por defecto prioriza métricas globales (`w_max`, `ΣR`) y equilibrio.
 - `sigma_vm_max` es útil como alerta, pero puede estar sesgado por singularidades nodales/locales; no lo uses como criterio único.

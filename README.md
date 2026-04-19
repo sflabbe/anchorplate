@@ -12,7 +12,7 @@ The repository targets the **out-of-plane bending subproblem** around anchor gro
 - Vertical reaction transfer through:
   - discrete supports (`fixed`, `spring`, `spring_tension_only`), and/or
   - distributed `foundation_patch` support (Winkler-type bedding, optional compression-only active set).
-- Coupled vertical loading introduced through a reference-point style line-coupling (`Fz`, `Mx`, `My` mapped to two load lines).
+- Load transfer from rigid bodies (e.g. columns, connection shoes) to the plate via one or more **flange segments per transfer**. Each transfer applies a resultant (`Fz`, `Mx`, `My`) at a reference point, and the resultant is distributed over the union of its flange nodes via a single minimum-norm solve. The legacy two-parallel-line shorthand (`coupled_line_loads`) is internally translated to this same mechanism for backward compatibility.
 - Comparative benchmarks for support assumptions, materials (as equivalent stiffness), and mesh sensitivity.
 
 ## Modeling boundaries / not covered
@@ -82,7 +82,7 @@ src/anchorplate/
   model.py                      core dataclasses and analysis options
   solver.py                     FE assembly, support/contact active-set logic, reactions
   support.py                    equivalent support-material helpers (k_area)
-  loading.py                    reference-point to line-load transfer
+  loading.py                    reference-point load transfer via flange segments (1..N), with legacy coupled-line wrapper
   mesh.py                       mesh generation/refinement helpers
   postprocess.py                moment/stress recovery helpers
   plotting.py                   2D/3D plots and NPZ export
@@ -216,26 +216,38 @@ You can now run analyses without editing Python scripts by using TOML input file
 
 ```bash
 python -m anchorplate.run_case examples/toml/simple_case.toml
+python -m anchorplate.run_case examples/toml/dual_flange_case.toml
+python -m anchorplate.run_case examples/toml/single_flange_balustrade.toml
 python -m anchorplate.run_case examples/toml/parametric_study.toml
 ```
 
-Supported top-level sections include:
+Supported top-level sections:
 
 - `[plate]`
 - `[analysis_options]`
-- `[[supports]]`
+- `[[anchors]]` (canonical point-anchor section)
 - `[[point_loads]]`
-- `[[coupled_line_loads]]`
+- `[[load_transfers]]` + `[[load_transfers.flanges]]` (canonical rigid-body transfer)
 - `[[foundation_patches]]`
 - `[[refinement_boxes]]`
 - optional `[support_material_model]`
 - optional `[[sweeps]]` for parametric studies
 
-See `docs/input_toml.md` for schema details and `examples/toml/*.toml` for minimal templates.
+Legacy (still accepted, emits `DeprecationWarning` where applicable):
+
+- `[[supports]]` — legacy alias of `[[anchors]]`
+- `[[coupled_line_loads]]` — legacy two-parallel-line shorthand, translated internally to a `load_transfer` with two flanges (`weight_scale = 1.0`)
+
+Do not combine canonical and legacy sections in the same file:
+
+- `[[anchors]]` + `[[supports]]` → input error
+- `[[load_transfers]]` + `[[coupled_line_loads]]` → input error
+
+See `docs/input_toml.md` for the full TOML schema, validation policies, tolerances, and the single-flange-moment note.
 
 ## Install and run
 
-Requirements (from `pyproject.toml`): Python `>=3.11`.
+Requirements (from `pyproject.toml`): Python `>=3.10`.
 
 ```bash
 pip install -e .
