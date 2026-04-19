@@ -30,6 +30,20 @@ Runnable scripts for the main analysis/benchmark modes.
 7. `python examples/demo_anchor_dominant.py`
 8. `python examples/demo_mesh_convergence.py --mode both`
 
+## TOML input templates
+
+Minimal declarative cases runnable via `python -m anchorplate.run_case`:
+
+| Template | Purpose |
+|---|---|
+| `toml/simple_case.toml` | Minimal 4-anchor plate with one legacy coupled-line load |
+| `toml/dual_flange_case.toml` | Canonical two-flange `load_transfer` (column with two parallel flanges) |
+| `toml/single_flange_balustrade.toml` | Single-flange `load_transfer` (balustrade post / single-patín case) |
+| `toml/foundation_patch_case.toml` | Foundation patch with compression-only contact |
+| `toml/parametric_study.toml` | Sweep example (legacy coupled-line axes) |
+
+Full TOML schema is in `docs/input_toml.md`.
+
 ## Pointers
 
 - Contact/lift-off sign convention and mask interpretation: `docs/contact_liftoff_guide.md`.
