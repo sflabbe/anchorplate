@@ -55,6 +55,45 @@ class CoupledLineLoad:
 
 
 @dataclass(frozen=True)
+class FlangeTransferLine:
+    """
+    Arbitrary line segment that transfers load from one rigid body to the plate.
+
+    `p1_mm` and `p2_mm` define the flange segment endpoints in plan view.
+    `weight_scale` multiplies the tributary nodal weights on this flange before
+    the single minimum-norm solve for its parent load transfer. It therefore
+    changes the global distribution between flanges of the same transfer; it is
+    not a purely local post-factor.
+    """
+
+    p1_mm: tuple[float, float]
+    p2_mm: tuple[float, float]
+    weight_scale: float = 1.0
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class LoadTransferDefinition:
+    """
+    Rigid load-transfer body that applies one resultant through one or more flanges.
+
+    A transfer represents one physical rigid body, such as a column, bracket, or
+    connection shoe. `force_n`, `mx_nmm`, and `my_nmm` are applied at the reference
+    point (`ref_x_mm`, `ref_y_mm`) and distributed to the union of all flange
+    nodes with one minimum-norm solve. Flanges from different rigid bodies should
+    be represented by separate `LoadTransferDefinition` instances.
+    """
+
+    ref_x_mm: float
+    ref_y_mm: float
+    force_n: float
+    mx_nmm: float = 0.0
+    my_nmm: float = 0.0
+    flanges: tuple[FlangeTransferLine, ...] = ()
+    label: str = ""
+
+
+@dataclass(frozen=True)
 class MeshRefinementBox:
     x_min_mm: float
     x_max_mm: float

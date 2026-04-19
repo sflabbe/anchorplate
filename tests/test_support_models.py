@@ -1,4 +1,4 @@
-from anchorplate.model import ConcreteAdvancedInput, SteelLayer
+from anchorplate.model import ConcreteAdvancedInput, FlangeTransferLine, LoadTransferDefinition, SteelLayer
 from anchorplate.support import (
     SupportMaterialModelResult,
     bedding_calibrated,
@@ -93,3 +93,23 @@ def test_wrapper_calibrated_metadata():
     assert result.k_area_n_per_mm3 == bedding_calibrated(12.5)
     assert result.model_name == "calibrated"
     assert result.parameters["k_area_n_per_mm3"] == 12.5
+
+
+def test_load_transfer_model_uses_nested_flange_segments():
+    transfer = LoadTransferDefinition(
+        ref_x_mm=150.0,
+        ref_y_mm=150.0,
+        force_n=10000.0,
+        flanges=(
+            FlangeTransferLine(
+                p1_mm=(100.0, 150.0),
+                p2_mm=(200.0, 150.0),
+                weight_scale=1.5,
+                label="flange",
+            ),
+        ),
+        label="body",
+    )
+    assert transfer.label == "body"
+    assert transfer.flanges[0].p1_mm == (100.0, 150.0)
+    assert transfer.flanges[0].weight_scale == 1.5

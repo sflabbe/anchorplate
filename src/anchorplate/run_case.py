@@ -40,6 +40,7 @@ def run_from_toml(input_toml: str | Path, dry_run: bool = False) -> int:
             supports=case.supports,
             point_loads=case.point_loads,
             coupled_loads=case.coupled_line_loads,
+            load_transfers=case.load_transfers,
             foundation_patches=case.foundation_patches,
             refinement_boxes=case.refinement_boxes,
             options=options,
@@ -54,7 +55,15 @@ def run_from_toml(input_toml: str | Path, dry_run: bool = False) -> int:
         }
 
         if options.save_plots:
-            plot_path = plot_result(case.plate, case.supports, case.point_loads, case.coupled_line_loads, result, options)
+            plot_path = plot_result(
+                case.plate,
+                case.supports,
+                case.point_loads,
+                case.coupled_line_loads,
+                result,
+                options,
+                load_transfers=case.load_transfers,
+            )
             payload["plot_path"] = str(plot_path)
         if options.save_3d_plots:
             plot3d = plot_result_3d(case.plate, case.supports, result, options)

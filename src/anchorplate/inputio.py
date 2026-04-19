@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from itertools import product
 from pathlib import Path
 import copy
+import warnings
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - only for Python < 3.11
@@ -14,7 +15,9 @@ from .model import (
     AnalysisOptions,
     ConcreteAdvancedInput,
     CoupledLineLoad,
+    FlangeTransferLine,
     FoundationPatch,
+    LoadTransferDefinition,
     MeshRefinementBox,
     PointLoad,
     PointSupport,
@@ -37,12 +40,23 @@ class InputValidationError(ValueError):
 
 @dataclass(frozen=True)
 class CaseDefinition:
+    """
+    Parsed case definition.
+
+    TOML input now uses `[[anchors]]` for point anchors, but the internal Python
+    representation remains `supports` with `PointSupport` objects for backward
+    compatibility. `load_transfers` represent rigid bodies that distribute one
+    resultant over their own flange set; do not mix flanges from separate rigid
+    bodies in a single transfer.
+    """
+
     name: str
     plate: SteelPlate
     analysis_options: AnalysisOptions
     supports: list[PointSupport]
     point_loads: list[PointLoad]
     coupled_line_loads: list[CoupledLineLoad]
+    load_transfers: tuple[LoadTransferDefinition, ...]
     foundation_patches: list[FoundationPatch]
     refinement_boxes: list[MeshRefinementBox]
     support_material_model: SupportMaterialModelResult | None
@@ -84,11 +98,34 @@ def load_input_config(path: str | Path) -> InputConfig:
     analysis_options_tbl = _optional_table(data, "analysis_options")
     analysis_options = AnalysisOptions(**_pick_fields("analysis_options", analysis_options_tbl, list(AnalysisOptions.__dataclass_fields__.keys())))
 
-    supports = [_parse_support(x, i) for i, x in enumerate(_optional_array_of_tables(data, "supports"), start=1)]
+    if "anchors" in data and "supports" in data:
+        raise InputValidationError("Use either [[anchors]] or legacy [[supports]], not both")
+    if "supports" in data:
+        warnings.warn(
+            "[[supports]] is deprecated in TOML input; use [[anchors]] instead. "
+            "The Python API still uses PointSupport and case.supports.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        support_key = "supports"
+    else:
+        support_key = "anchors"
+    supports = [
+        _parse_support(x, i, table_name=support_key)
+        for i, x in enumerate(_optional_array_of_tables(data, support_key), start=1)
+    ]
     if not supports:
-        raise InputValidationError("At least one [[supports]] entry is required")
+        raise InputValidationError("At least one [[anchors]] entry is required")
 
     point_loads = [_parse_point_load(x, i) for i, x in enumerate(_optional_array_of_tables(data, "point_loads"), start=1)]
+    if "load_transfer" in data:
+        raise InputValidationError("Use [[load_transfers]] array syntax; [load_transfer] is not supported")
+    if "load_transfers" in data and "coupled_line_loads" in data:
+        raise InputValidationError("Use either [[load_transfers]] or legacy [[coupled_line_loads]], not both")
+    load_transfers = tuple(
+        _parse_load_transfer(x, i)
+        for i, x in enumerate(_optional_array_of_tables(data, "load_transfers"), start=1)
+    )
     coupled_line_loads = [_parse_coupled_line_load(x, i) for i, x in enumerate(_optional_array_of_tables(data, "coupled_line_loads"), start=1)]
     foundation_patches_raw = _optional_array_of_tables(data, "foundation_patches")
     refinement_boxes = [_parse_refinement_box(x, i) for i, x in enumerate(_optional_array_of_tables(data, "refinement_boxes"), start=1)]
@@ -109,10 +146,13 @@ def load_input_config(path: str | Path) -> InputConfig:
         supports=supports,
         point_loads=point_loads,
         coupled_line_loads=coupled_line_loads,
+        load_transfers=load_transfers,
         foundation_patches=foundation_patches,
         refinement_boxes=refinement_boxes,
         support_material_model=support_material_model,
     )
+    if load_transfers:
+        _validate_load_transfer_mesh_overlaps(case)
 
     sweeps = [_parse_sweep(x, i) for i, x in enumerate(_optional_array_of_tables(data, "sweeps"), start=1)]
     mode = str(data.get("mode", "study" if sweeps else "single_case"))
@@ -213,13 +253,13 @@ def _resize_patch(patch: FoundationPatch, size_mm: float) -> FoundationPatch:
     return replace(patch, x_min_mm=cx - h, x_max_mm=cx + h, y_min_mm=cy - h, y_max_mm=cy + h)
 
 
-def _parse_support(tbl: dict[str, Any], idx: int) -> PointSupport:
+def _parse_support(tbl: dict[str, Any], idx: int, table_name: str = "anchors") -> PointSupport:
     try:
-        item = PointSupport(**_pick_fields(f"supports[{idx}]", tbl, ["x_mm", "y_mm", "kind", "kz_n_per_mm", "label"]))
+        item = PointSupport(**_pick_fields(f"{table_name}[{idx}]", tbl, ["x_mm", "y_mm", "kind", "kz_n_per_mm", "label"]))
     except TypeError as exc:
-        raise InputValidationError(f"Invalid [[supports]] #{idx}: {exc}") from exc
+        raise InputValidationError(f"Invalid [[{table_name}]] #{idx}: {exc}") from exc
     if item.kind in {"spring", "spring_tension_only"} and item.kz_n_per_mm <= 0.0:
-        raise InputValidationError(f"[[supports]] #{idx}: kz_n_per_mm must be > 0 for kind='{item.kind}'")
+        raise InputValidationError(f"[[{table_name}]] #{idx}: kz_n_per_mm must be > 0 for kind='{item.kind}'")
     return item
 
 
@@ -251,6 +291,100 @@ def _parse_coupled_line_load(tbl: dict[str, Any], idx: int) -> CoupledLineLoad:
         )
     except TypeError as exc:
         raise InputValidationError(f"Invalid [[coupled_line_loads]] #{idx}: {exc}") from exc
+
+
+def _as_point_pair(ctx: str, value: Any) -> tuple[float, float]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise InputValidationError(f"{ctx} must be a two-number array")
+    if not all(isinstance(item, (int, float)) for item in value):
+        raise InputValidationError(f"{ctx} must contain only numbers")
+    return (float(value[0]), float(value[1]))
+
+
+def _parse_flange(tbl: dict[str, Any], transfer_idx: int, idx: int) -> FlangeTransferLine:
+    ctx = f"load_transfers[{transfer_idx}].flanges[{idx}]"
+    fields = _pick_fields(ctx, tbl, ["p1_mm", "p2_mm", "weight_scale", "label"])
+    if "p1_mm" not in fields or "p2_mm" not in fields:
+        raise InputValidationError(f"[[load_transfers.flanges]] #{idx}: p1_mm and p2_mm are required")
+    p1_mm = _as_point_pair(f"{ctx}.p1_mm", fields["p1_mm"])
+    p2_mm = _as_point_pair(f"{ctx}.p2_mm", fields["p2_mm"])
+    weight_scale = float(fields.get("weight_scale", 1.0))
+    if weight_scale <= 0.0:
+        raise InputValidationError(f"{ctx}: weight_scale must be > 0")
+    length = ((p2_mm[0] - p1_mm[0]) ** 2 + (p2_mm[1] - p1_mm[1]) ** 2) ** 0.5
+    if length <= 1e-12:
+        raise InputValidationError(f"{ctx}: p1_mm and p2_mm must define a non-degenerate segment")
+    return FlangeTransferLine(
+        p1_mm=p1_mm,
+        p2_mm=p2_mm,
+        weight_scale=weight_scale,
+        label=str(fields.get("label", "")),
+    )
+
+
+def _parse_load_transfer(tbl: dict[str, Any], idx: int) -> LoadTransferDefinition:
+    ctx = f"load_transfers[{idx}]"
+    fields = _pick_fields(
+        ctx,
+        tbl,
+        ["ref_x_mm", "ref_y_mm", "force_n", "mx_nmm", "my_nmm", "flanges", "label"],
+    )
+    raw_flanges = fields.pop("flanges", [])
+    if not isinstance(raw_flanges, list):
+        raise InputValidationError(f"{ctx}.flanges must be an array of tables")
+    if not raw_flanges:
+        raise InputValidationError(f"[[load_transfers]] #{idx}: at least one [[load_transfers.flanges]] entry is required")
+    for flange_idx, item in enumerate(raw_flanges, start=1):
+        if not isinstance(item, dict):
+            raise InputValidationError(f"{ctx}.flanges[{flange_idx}] must be a table")
+    flanges = tuple(_parse_flange(item, idx, i) for i, item in enumerate(raw_flanges, start=1))
+    try:
+        return LoadTransferDefinition(
+            ref_x_mm=float(fields["ref_x_mm"]),
+            ref_y_mm=float(fields["ref_y_mm"]),
+            force_n=float(fields["force_n"]),
+            mx_nmm=float(fields.get("mx_nmm", 0.0)),
+            my_nmm=float(fields.get("my_nmm", 0.0)),
+            flanges=flanges,
+            label=str(fields.get("label", "")),
+        )
+    except KeyError as exc:
+        raise InputValidationError(f"[[load_transfers]] #{idx}: missing required key {exc.args[0]!r}") from exc
+    except (TypeError, ValueError) as exc:
+        raise InputValidationError(f"Invalid [[load_transfers]] #{idx}: {exc}") from exc
+
+
+def _validate_load_transfer_mesh_overlaps(case: CaseDefinition) -> None:
+    from .mesh import build_mesh, line_vertex_ids
+
+    mesh = build_mesh(
+        case.plate,
+        case.supports,
+        case.point_loads,
+        case.coupled_line_loads,
+        case.analysis_options,
+        load_transfers=case.load_transfers,
+        refinement_boxes=case.refinement_boxes,
+    )
+    tol = case.analysis_options.line_pick_tol_mm
+    for transfer_idx, transfer in enumerate(case.load_transfers, start=1):
+        flange_node_sets: list[set[int]] = []
+        for flange_idx, flange in enumerate(transfer.flanges, start=1):
+            length = ((flange.p2_mm[0] - flange.p1_mm[0]) ** 2 + (flange.p2_mm[1] - flange.p1_mm[1]) ** 2) ** 0.5
+            if length <= max(tol, 1e-12):
+                raise InputValidationError(
+                    f"load_transfers[{transfer_idx}].flanges[{flange_idx}]: "
+                    "p1_mm and p2_mm must define a non-degenerate segment"
+                )
+            ids = line_vertex_ids(mesh, p1_mm=flange.p1_mm, p2_mm=flange.p2_mm, tol=tol)
+            flange_node_sets.append(set(int(v) for v in ids))
+        for i in range(len(flange_node_sets)):
+            for j in range(i + 1, len(flange_node_sets)):
+                if flange_node_sets[i].intersection(flange_node_sets[j]):
+                    raise InputValidationError(
+                        f"[[load_transfers]] #{transfer_idx}: flanges #{i + 1} and #{j + 1} "
+                        "overlap or have common mesh nodes within analysis_options.line_pick_tol_mm"
+                    )
 
 
 def _parse_refinement_box(tbl: dict[str, Any], idx: int) -> MeshRefinementBox:

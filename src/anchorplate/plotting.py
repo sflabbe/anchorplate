@@ -9,7 +9,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 from .mesh import triangle_connectivity
-from .model import AnalysisOptions, CoupledLineLoad, FoundationPatch, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
+from .model import AnalysisOptions, CoupledLineLoad, FoundationPatch, LoadTransferDefinition, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
 from .postprocess import nodal_average_from_element_field
 
 
@@ -96,6 +96,38 @@ def _contact_summary(result, active_mask: np.ndarray, inactive_mask: np.ndarray 
     return summary
 
 
+def _plot_coupled_line_load(ax, cl: CoupledLineLoad) -> None:
+    ax.plot(cl.ref_x_mm, cl.ref_y_mm, marker="x", ms=8, linestyle="None", color="#1f77b4")
+    ax.annotate(cl.label, (cl.ref_x_mm, cl.ref_y_mm), xytext=(5, 5), textcoords="offset points")
+    if cl.orientation == "vertical":
+        x1 = cl.ref_x_mm - 0.5 * cl.line_spacing_mm
+        x2 = cl.ref_x_mm + 0.5 * cl.line_spacing_mm
+        y0 = cl.ref_y_mm - 0.5 * cl.line_length_mm
+        y1 = cl.ref_y_mm + 0.5 * cl.line_length_mm
+        ax.plot([x1, x1], [y0, y1], lw=3, alpha=0.8, color="#1f77b4")
+        ax.plot([x2, x2], [y0, y1], lw=3, alpha=0.8, color="#1f77b4")
+    else:
+        y1 = cl.ref_y_mm - 0.5 * cl.line_spacing_mm
+        y2 = cl.ref_y_mm + 0.5 * cl.line_spacing_mm
+        x0 = cl.ref_x_mm - 0.5 * cl.line_length_mm
+        x1 = cl.ref_x_mm + 0.5 * cl.line_length_mm
+        ax.plot([x0, x1], [y1, y1], lw=3, alpha=0.8, color="#1f77b4")
+        ax.plot([x0, x1], [y2, y2], lw=3, alpha=0.8, color="#1f77b4")
+
+
+def _plot_load_transfer(ax, transfer: LoadTransferDefinition) -> None:
+    ax.plot(transfer.ref_x_mm, transfer.ref_y_mm, marker="+", ms=10, mew=1.8, linestyle="None", color="#222222")
+    ax.annotate(transfer.label or "RP", (transfer.ref_x_mm, transfer.ref_y_mm), xytext=(6, 6), textcoords="offset points")
+    for idx, flange in enumerate(transfer.flanges, start=1):
+        x = [flange.p1_mm[0], flange.p2_mm[0]]
+        y = [flange.p1_mm[1], flange.p2_mm[1]]
+        ax.plot(x, y, lw=3, alpha=0.85, color="#008b8b")
+        if flange.label:
+            xm = 0.5 * (x[0] + x[1])
+            ym = 0.5 * (y[0] + y[1])
+            ax.annotate(flange.label or f"F{idx}", (xm, ym), xytext=(5, -10), textcoords="offset points", fontsize=8)
+
+
 def export_result_npz(result, outpath: Path) -> tuple[Path, dict]:
     """
     Export the full result to a compressed .npz file and return (path, contact_summary).
@@ -156,6 +188,7 @@ def plot_mesh(
     refinement_boxes: Sequence[MeshRefinementBox] | None = None,
     foundation_patches: Sequence[FoundationPatch] | None = None,
     outpath: Path | None = None,
+    load_transfers: Sequence[LoadTransferDefinition] | None = None,
 ):
     tri = triangle_connectivity(mesh)
     triang = mtri.Triangulation(mesh.p[0], mesh.p[1], tri)
@@ -173,22 +206,10 @@ def plot_mesh(
         ax.annotate(p.label or "P", (p.x_mm, p.y_mm), xytext=(4, 4), textcoords="offset points")
 
     for cl in coupled_loads:
-        ax.plot(cl.ref_x_mm, cl.ref_y_mm, marker="x", ms=8, linestyle="None")
-        ax.annotate(cl.label, (cl.ref_x_mm, cl.ref_y_mm), xytext=(5, 5), textcoords="offset points")
-        if cl.orientation == "vertical":
-            x1 = cl.ref_x_mm - 0.5 * cl.line_spacing_mm
-            x2 = cl.ref_x_mm + 0.5 * cl.line_spacing_mm
-            y0 = cl.ref_y_mm - 0.5 * cl.line_length_mm
-            y1 = cl.ref_y_mm + 0.5 * cl.line_length_mm
-            ax.plot([x1, x1], [y0, y1], lw=3, alpha=0.8)
-            ax.plot([x2, x2], [y0, y1], lw=3, alpha=0.8)
-        else:
-            y1 = cl.ref_y_mm - 0.5 * cl.line_spacing_mm
-            y2 = cl.ref_y_mm + 0.5 * cl.line_spacing_mm
-            x0 = cl.ref_x_mm - 0.5 * cl.line_length_mm
-            x1 = cl.ref_x_mm + 0.5 * cl.line_length_mm
-            ax.plot([x0, x1], [y1, y1], lw=3, alpha=0.8)
-            ax.plot([x0, x1], [y2, y2], lw=3, alpha=0.8)
+        _plot_coupled_line_load(ax, cl)
+
+    for transfer in load_transfers or []:
+        _plot_load_transfer(ax, transfer)
 
     for box in refinement_boxes or []:
         xs = [box.x_min_mm, box.x_max_mm, box.x_max_mm, box.x_min_mm, box.x_min_mm]
@@ -321,7 +342,15 @@ def plot_result_3d(
     return outpath
 
 
-def plot_result(plate: SteelPlate, supports: Sequence[PointSupport], point_loads: Sequence[PointLoad], coupled_loads: Sequence[CoupledLineLoad], result, options: AnalysisOptions):
+def plot_result(
+    plate: SteelPlate,
+    supports: Sequence[PointSupport],
+    point_loads: Sequence[PointLoad],
+    coupled_loads: Sequence[CoupledLineLoad],
+    result,
+    options: AnalysisOptions,
+    load_transfers: Sequence[LoadTransferDefinition] | None = None,
+):
     outdir = Path(options.output_dir)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -333,7 +362,7 @@ def plot_result(plate: SteelPlate, supports: Sequence[PointSupport], point_loads
     fig, axes = plt.subplots(2, 2, figsize=(13, 10), constrained_layout=True)
 
     ax = axes[0, 0]
-    ax.set_title("Geometry, supports, RP and coupled lines")
+    ax.set_title("Geometry, supports, RP and transfer flanges")
     ax.triplot(triang, color="0.85", linewidth=0.35)
     ax.plot([0, plate.length_mm, plate.length_mm, 0, 0], [0, 0, plate.width_mm, plate.width_mm, 0], "k-", lw=1.0)
     for i, s in enumerate(supports, start=1):
@@ -344,22 +373,9 @@ def plot_result(plate: SteelPlate, supports: Sequence[PointSupport], point_loads
         ax.plot(p.x_mm, p.y_mm, marker="o", ms=6, linestyle="None")
         ax.annotate(p.label or "P", (p.x_mm, p.y_mm), xytext=(5, -10), textcoords="offset points")
     for cl in coupled_loads:
-        ax.plot(cl.ref_x_mm, cl.ref_y_mm, marker="x", ms=8, linestyle="None")
-        ax.annotate(cl.label, (cl.ref_x_mm, cl.ref_y_mm), xytext=(6, 6), textcoords="offset points")
-        if cl.orientation == "vertical":
-            x1 = cl.ref_x_mm - 0.5 * cl.line_spacing_mm
-            x2 = cl.ref_x_mm + 0.5 * cl.line_spacing_mm
-            y0 = cl.ref_y_mm - 0.5 * cl.line_length_mm
-            y1 = cl.ref_y_mm + 0.5 * cl.line_length_mm
-            ax.plot([x1, x1], [y0, y1], lw=3, alpha=0.8)
-            ax.plot([x2, x2], [y0, y1], lw=3, alpha=0.8)
-        else:
-            y1 = cl.ref_y_mm - 0.5 * cl.line_spacing_mm
-            y2 = cl.ref_y_mm + 0.5 * cl.line_spacing_mm
-            x0 = cl.ref_x_mm - 0.5 * cl.line_length_mm
-            x1 = cl.ref_x_mm + 0.5 * cl.line_length_mm
-            ax.plot([x0, x1], [y1, y1], lw=3, alpha=0.8)
-            ax.plot([x0, x1], [y2, y2], lw=3, alpha=0.8)
+        _plot_coupled_line_load(ax, cl)
+    for transfer in load_transfers or []:
+        _plot_load_transfer(ax, transfer)
     if np.any(active_mask):
         ax.scatter(result.mesh.p[0][active_mask], result.mesh.p[1][active_mask], s=6, alpha=0.4, label="foundation active")
     if inactive_mask is not None and np.any(inactive_mask):

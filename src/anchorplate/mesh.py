@@ -5,7 +5,7 @@ from typing import Iterable, Sequence
 import numpy as np
 from skfem import MeshQuad, MeshTri
 
-from .model import AnalysisOptions, CoupledLineLoad, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
+from .model import AnalysisOptions, CoupledLineLoad, LoadTransferDefinition, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
 
 
 MeshType = MeshTri | MeshQuad
@@ -108,12 +108,39 @@ def seeds_from_boxes(boxes: Sequence[MeshRefinementBox]) -> tuple[list[float], l
     return xs, ys
 
 
+def _add_segment_seeds(
+    x_seeds: list[float],
+    y_seeds: list[float],
+    p1_mm: tuple[float, float],
+    p2_mm: tuple[float, float],
+    target_h_mm: float,
+) -> None:
+    x1, y1 = p1_mm
+    x2, y2 = p2_mm
+    x_seeds.extend([float(x1), float(x2)])
+    y_seeds.extend([float(y1), float(y2)])
+
+    # For oblique flanges, add paired parametric points so the tensor mesh has
+    # vertices lying exactly on the arbitrary transfer segment. Axis-aligned
+    # flanges are already handled by the axis grids, preserving legacy meshing.
+    if abs(float(x2) - float(x1)) <= 1e-12 or abs(float(y2) - float(y1)) <= 1e-12:
+        return
+    length = float(np.hypot(float(x2) - float(x1), float(y2) - float(y1)))
+    if length <= 1e-12:
+        return
+    n_div = max(int(np.ceil(length / max(float(target_h_mm), 1e-9))), 1)
+    ts = np.linspace(0.0, 1.0, n_div + 1)
+    x_seeds.extend((float(x1) + (float(x2) - float(x1)) * ts).tolist())
+    y_seeds.extend((float(y1) + (float(y2) - float(y1)) * ts).tolist())
+
+
 def build_mesh(
     plate: SteelPlate,
     supports: Sequence[PointSupport],
     point_loads: Sequence[PointLoad],
     coupled_loads: Sequence[CoupledLineLoad],
     options: AnalysisOptions,
+    load_transfers: Sequence[LoadTransferDefinition] | None = None,
     refinement_boxes: Sequence[MeshRefinementBox] | None = None,
 ) -> MeshType:
     x_seeds: list[float] = []
@@ -151,6 +178,12 @@ def build_mesh(
                 cl.ref_y_mm,
             ])
 
+    for transfer in load_transfers or []:
+        x_seeds.append(transfer.ref_x_mm)
+        y_seeds.append(transfer.ref_y_mm)
+        for flange in transfer.flanges:
+            _add_segment_seeds(x_seeds, y_seeds, flange.p1_mm, flange.p2_mm, options.target_h_mm)
+
     x_specs: list[tuple[float, float, float]] = []
     y_specs: list[tuple[float, float, float]] = []
     if refinement_boxes:
@@ -182,22 +215,54 @@ def vertex_dofs_for_ids(basis, vertex_ids: np.ndarray) -> np.ndarray:
 
 def line_vertex_ids(
     mesh: MeshType,
-    x_const: float | None,
-    y_const: float | None,
-    span_min: float,
-    span_max: float,
+    x_const: float | None = None,
+    y_const: float | None = None,
+    span_min: float | None = None,
+    span_max: float | None = None,
+    p1_mm: tuple[float, float] | None = None,
+    p2_mm: tuple[float, float] | None = None,
     tol: float = 1e-9,
 ) -> np.ndarray:
-    x = mesh.p[0]
-    y = mesh.p[1]
-    if x_const is not None:
-        mask = np.isclose(x, x_const, atol=tol) & (y >= span_min - tol) & (y <= span_max + tol)
-        ids = np.flatnonzero(mask)
-        order = np.argsort(y[ids])
-        return ids[order]
-    mask = np.isclose(y, y_const, atol=tol) & (x >= span_min - tol) & (x <= span_max + tol)
+    """
+    Return mesh vertices on a line segment, ordered from p1 to p2.
+
+    `tol` is applied to the normal distance from each vertex to the segment.
+    The scalar projection parameter is also bounded by
+    `[-tol / segment_length, 1 + tol / segment_length]`. The legacy
+    x-constant/y-constant calling form is retained for existing callers and is
+    internally converted to an equivalent segment.
+    """
+
+    if p1_mm is None or p2_mm is None:
+        if span_min is None or span_max is None:
+            raise ValueError("line_vertex_ids requires p1_mm/p2_mm or span_min/span_max")
+        lo = float(min(span_min, span_max))
+        hi = float(max(span_min, span_max))
+        if x_const is not None:
+            p1_mm = (float(x_const), lo)
+            p2_mm = (float(x_const), hi)
+        elif y_const is not None:
+            p1_mm = (lo, float(y_const))
+            p2_mm = (hi, float(y_const))
+        else:
+            raise ValueError("line_vertex_ids legacy form requires x_const or y_const")
+
+    p1 = np.asarray(p1_mm, dtype=float)
+    p2 = np.asarray(p2_mm, dtype=float)
+    v = p2 - p1
+    length = float(np.linalg.norm(v))
+    if length <= 0.0:
+        raise ValueError("line segment length must be positive")
+
+    vertices = mesh.p.T
+    rel = vertices - p1[None, :]
+    t = (rel @ v) / (length * length)
+    closest = p1[None, :] + t[:, None] * v[None, :]
+    normal_dist = np.linalg.norm(vertices - closest, axis=1)
+    tol_s = float(tol) / length
+    mask = (normal_dist <= float(tol)) & (t >= -tol_s) & (t <= 1.0 + tol_s)
     ids = np.flatnonzero(mask)
-    order = np.argsort(x[ids])
+    order = np.argsort(t[ids], kind="mergesort")
     return ids[order]
 
 
@@ -246,4 +311,3 @@ def triangle_areas(mesh: MeshType) -> np.ndarray:
     :func:`element_areas`; keep this alias to avoid breaking existing scripts.
     """
     return element_areas(mesh)
-

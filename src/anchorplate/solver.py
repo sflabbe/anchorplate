@@ -11,9 +11,9 @@ from scipy.sparse import csr_matrix, diags
 from skfem import Basis, BilinearForm, ElementQuadBFS, ElementTriMorley, condense, solve
 from skfem.helpers import dd, ddot, eye, trace
 
-from .loading import LoadTransferRecord, add_coupled_line_loads, add_point_loads
+from .loading import LoadTransferRecord, add_coupled_line_loads, add_flange_group_load, add_point_loads
 from .mesh import build_mesh, nearest_vertex_ids, nodal_tributary_areas, triangle_connectivity, vertex_dofs_for_ids
-from .model import AnalysisOptions, AnchorSpringState, CoupledLineLoad, FoundationPatch, FoundationState, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
+from .model import AnalysisOptions, AnchorSpringState, CoupledLineLoad, FoundationPatch, FoundationState, LoadTransferDefinition, MeshRefinementBox, PointLoad, PointSupport, SteelPlate
 from .postprocess import recover_moments_and_stress, vertex_deflections
 
 
@@ -404,14 +404,24 @@ def solve_anchor_plate(
     options: AnalysisOptions | None = None,
     foundation_patches: Sequence[FoundationPatch] | None = None,
     refinement_boxes: Sequence[MeshRefinementBox] | None = None,
+    load_transfers: Sequence[LoadTransferDefinition] = (),
     name: str = "anchor_plate_case",
 ) -> Result:
     point_loads = list(point_loads or [])
     coupled_loads = list(coupled_loads or [])
+    load_transfers = list(load_transfers or [])
     foundation_patches = list(foundation_patches or [])
     options = options or AnalysisOptions()
 
-    mesh = build_mesh(plate, supports, point_loads, coupled_loads, options, refinement_boxes=refinement_boxes)
+    mesh = build_mesh(
+        plate,
+        supports,
+        point_loads,
+        coupled_loads,
+        options,
+        load_transfers=load_transfers,
+        refinement_boxes=refinement_boxes,
+    )
     if options.mesh_backend == "tri_morley":
         basis = Basis(mesh, ElementTriMorley())
     elif options.mesh_backend == "quad_bfs":
@@ -423,6 +433,8 @@ def solve_anchor_plate(
     rhs = np.zeros(k_plate.shape[0], dtype=float)
     load_records: list[LoadTransferRecord] = []
     load_records.extend(add_point_loads(mesh, basis, rhs, point_loads))
+    for load_transfer in load_transfers:
+        load_records.append(add_flange_group_load(mesh, basis, rhs, load_transfer, options))
     load_records.extend(add_coupled_line_loads(mesh, basis, rhs, coupled_loads, options))
 
     (
