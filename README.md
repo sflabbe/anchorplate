@@ -281,3 +281,52 @@ pytest -q
 - `docs/anchor_dominant_note.md`
 - `docs/notes.md`
 - `docs/quad_backend_experimental_note.md`
+
+## Development setup
+
+`anchorplate-morley` is a normal Python package with a `src/` layout.  The
+module import name is `anchorplate`; the distribution name is
+`anchorplate-morley` so sibling repositories can depend on it explicitly.
+
+Install `uv` first, then use the locked development environment:
+
+```bash
+uv sync --dev
+uv run pytest -q
+uv run ruff check src tests examples --select=E,F,W,B --ignore=E501
+```
+
+Headless plotting is supported by running examples/tests with a non-interactive
+matplotlib backend:
+
+```bash
+MPLBACKEND=Agg uv run pytest -q
+```
+
+### Run the TOML API / CLI
+
+```bash
+uv run anchorplate-run-case examples/toml/simple_case.toml --dry-run
+MPLBACKEND=Agg uv run anchorplate-run-case examples/toml/simple_case.toml
+```
+
+The CLI is a package entry point for `anchorplate.run_case:main`.  It is the
+stable smoke path used by sibling repositories.  Low-level Python integration can
+continue to import the public dataclasses and solver functions from
+`anchorplate`, `anchorplate.model`, `anchorplate.solver`, and
+`anchorplate.plotting`.
+
+### Lockfile and dependency policy
+
+`uv.lock` is the dependency source of truth for development.  This repository no
+longer relies on a manual `requirements.txt` workflow.
+
+Add dependencies with uv instead of editing ad-hoc requirement files:
+
+```bash
+uv add <runtime-package>
+uv add --dev <dev-package>
+uv lock
+```
+
+Generated outputs stay under `outputs/` and are not committed by default.

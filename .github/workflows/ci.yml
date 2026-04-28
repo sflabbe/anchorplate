@@ -1,0 +1,29 @@
+name: anchorplate-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Sync
+        run: uv sync --dev --frozen
+      - name: Lock check
+        run: uv lock --check
+      - name: Lint
+        run: uv run ruff check src tests examples --select=E,F,W,B --ignore=E501
+      - name: Test
+        run: MPLBACKEND=Agg uv run pytest -q
+      - name: Smoke TOML API
+        run: MPLBACKEND=Agg uv run anchorplate-run-case examples/toml/simple_case.toml --dry-run
